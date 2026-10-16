@@ -137,7 +137,7 @@ internal static class RogueData
     public static string AbilityName(int id) => Abilities.TryGetValue(id, out var e) ? e.Name : $"#{id}";
     public static int AbilityToNational(int id) => Abilities.TryGetValue(id, out var e) ? e.National : 0;
     public static int AbilityFromNational(int national) => AbilityReverse.GetValueOrDefault(national);
-    public static string ItemName(int id) => Items.TryGetValue(id, out var e) ? e.Name : $"#{id}";
+    public static string ItemName(int id) => id == 0 ? "None" : Items.TryGetValue(id, out var e) ? e.Name : $"#{id}";
     public static int ItemToNational(int id) => Items.TryGetValue(id, out var e) ? e.National : 0;
     public static int ItemFromNational(int national) => ItemReverse.GetValueOrDefault(national);
     public static int ItemPocket(int id) => Items.TryGetValue(id, out var e) ? e.Pocket : 0;

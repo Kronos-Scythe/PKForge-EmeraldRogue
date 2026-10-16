@@ -458,13 +458,16 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         return choices;
     }
 
-    public IReadOnlyList<string> GetItemNames()
+    // The UI asks for this on every picker row and binding, so build it once.
+    private static readonly Lazy<string[]> ItemNameList = new(() =>
     {
         var names = new string[RogueData.ItemCount];
         for (var id = 0; id < names.Length; id++)
             names[id] = RogueData.ItemName(id);
         return names;
-    }
+    });
+
+    public IReadOnlyList<string> GetItemNames() => ItemNameList.Value;
 
     public IReadOnlyList<string> GetFormChoices(int species) => [""];
     public IReadOnlyList<int> GetSpeciesTypes(int species) => RogueData.TypesOf(RogueData.SpeciesFromNational(species));
