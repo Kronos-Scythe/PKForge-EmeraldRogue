@@ -822,7 +822,7 @@ public static class BankEntryEditor
             var detail = _session.ReadEntity(0, 0);
             var export = _session.ExportSlot(0, 0);
             await QrPopup.ShowBinaryAsync(_host, $"{detail.SpeciesName} · .PK QR",
-                QrEntityService.MakePayload(export.Data, _entry.Info.Generation, detail.SpeciesName));
+                QrEntityService.MakePayload(export.Data, export.Format == "PK3EX" ? QrEntityCodec.RogueGeneration : _entry.Info.Generation, detail.SpeciesName));
         }
 
         /// <summary>

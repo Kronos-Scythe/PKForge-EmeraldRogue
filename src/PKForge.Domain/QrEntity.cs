@@ -29,7 +29,9 @@ public static class QrEntityCodec
     public const string Magic = "PKF1";
     public const byte CurrentVersion = 1;
     private const int HeaderSize = 8; // magic + version + generation + length
-    private const int MaxGeneration = 9;
+    /// <summary>Envelope "generation" 10 marks an Emerald Rogue record (its own 80-byte box format, not a PK3).</summary>
+    public const int RogueGeneration = 10;
+    private const int MaxGeneration = RogueGeneration;
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 

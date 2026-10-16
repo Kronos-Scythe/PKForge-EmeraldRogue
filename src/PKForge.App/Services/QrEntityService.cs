@@ -69,7 +69,7 @@ public static class QrEntityService
 
         // The PKF1 envelope carries the generation, not the format: it settles PK6 vs PK7
         // (same size), while Gen 8/9 siblings still fall back to PKHeX's heuristics.
-        var format = parsed.Generation == 6 ? "PK6" : null;
+        var format = parsed.Generation == 6 ? "PK6" : parsed.Generation == QrEntityCodec.RogueGeneration ? "PK3EX" : null;
         var info = engine.TryDescribeEntity(parsed.EntityBytes, "QR transfer", format);
         if (info is null)
         {

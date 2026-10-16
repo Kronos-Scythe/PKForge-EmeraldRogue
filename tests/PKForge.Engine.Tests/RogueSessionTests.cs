@@ -185,4 +185,56 @@ public sealed class RogueSessionTests
         using var reopened = Engine.OpenSession(candidate.ToArray(), "Rogue");
         Assert.Equal(before, Count(reopened));
     }
+
+    [Fact]
+    public void Bank_export_import_and_qr_envelope_round_trip()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var export = session.ExportSlot(-1, 0);
+        Assert.Equal("PK3EX", export.Format!);
+        Assert.Equal(80, export.Data.Length);
+
+        var info = Engine.TryDescribeEntity(export.Data, "test", export.Format);
+        Assert.NotNull(info);
+        Assert.Equal(987, info!.Species); // Flutter Mane
+
+        var payload = QrEntityCodec.MakePayload(export.Data, QrEntityCodec.RogueGeneration, "Flutter Mane");
+        var parsed = QrEntityCodec.TryParse(payload);
+        Assert.NotNull(parsed);
+        Assert.Equal(QrEntityCodec.RogueGeneration, parsed!.Generation);
+
+        // Land it in the first empty box slot and read it back.
+        var slot = Enumerable.Range(0, 30).First(sl => session.ReadEntity(9, sl).IsEmpty);
+        Assert.True(session.ImportSlot(9, slot, parsed.EntityBytes, "PK3EX"));
+        Assert.Equal(987, session.ReadEntity(9, slot).Species);
+        Assert.False(session.ImportSlot(9, slot, new byte[58], "PK3EX"));
+        Assert.False(session.ImportSlot(9, slot, parsed.EntityBytes, "PK3"));
+        Assert.True(Engine.Validate(session.Serialize()));
+    }
+
+    [Fact]
+    public void Event_flags_and_vars_read_and_write()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        Assert.True(EventFlagService.IsSupported(session));
+        var catalog = EventFlagService.Load(session);
+        Assert.Equal(2400, catalog.Flags.Count);
+        Assert.Equal(256, catalog.Work.Count);
+        var runActive = catalog.Flags.First(f => f.Label == "Rogue Run Active");
+        Assert.True(runActive.IsOn); // the sample was saved mid-run: cross-checks the flag offset
+
+        Assert.True(EventFlagService.SetFlag(session, EventFlagBank.Event, 2000, true).Success);
+        Assert.True(EventFlagService.SetWork(session, 5, 1234).Success);
+        Assert.False(EventFlagService.SetWork(session, 5, 70000).Success);
+        var after = EventFlagService.Load(session);
+        Assert.True(after.Flags[2000].IsOn && after.Flags[2000].Changed);
+        Assert.Equal(1234, (int)after.Work[5].Value);
+        Assert.True(Engine.Validate(session.Serialize()));
+
+        EventFlagService.SetFlag(session, EventFlagBank.Event, 2000, false);
+        EventFlagService.SetWork(session, 5, catalog.Work[5].Original);
+        Assert.True(session.Serialize().Span.SequenceEqual(bytes));
+    }
 }

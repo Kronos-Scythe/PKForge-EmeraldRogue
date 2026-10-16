@@ -20,8 +20,9 @@ internal static class CfruEntity
     public const string RadicalRed = "PK3RR";
     public const string GsChronicles = "PK3GSC";
     public const string Unbound = "PK3UB";
+    public const string Rogue = "PK3EX";
 
-    public static readonly IReadOnlyList<string> Formats = [RadicalRed, GsChronicles, Unbound];
+    public static readonly IReadOnlyList<string> Formats = [RadicalRed, GsChronicles, Unbound, Rogue];
 
     /// <summary>The CFRU format a recorded format (type name, extension or file name) names, else null.</summary>
     public static string? Recognize(string? format) =>
@@ -32,6 +33,7 @@ internal static class CfruEntity
     {
         RadicalRed => "Radical Red",
         GsChronicles => "GS Chronicles",
+        Rogue => "Emerald Rogue",
         _ => "Unbound",
     };
 
@@ -86,6 +88,9 @@ internal static class CfruEntity
     /// <summary>What the Bank shows for these bytes, or null when they are not a mon of that game.</summary>
     public static BankEntryInfo? Describe(byte[] bytes, string format, string sourceName)
     {
+        if (format == Rogue)
+            return bytes.Length == Engine.Rogue.RogueMon.BoxSize && new Engine.Rogue.RogueMon(bytes.ToArray(), 0, party: false) is { LooksValid: true } rogue
+                ? Engine.Rogue.RogueEngineSession.Describe(rogue, sourceName) : null;
         if (bytes.Length != RadicalRedFormat.PcMonSize) return null;
         if (format == Unbound)
         {
@@ -119,6 +124,11 @@ internal static class CfruEntity
     private static PK3? ToPk3(byte[] bytes, string format, out string? refusal, List<string>? adjustments = null)
     {
         refusal = null;
+        if (format == Rogue)
+        {
+            refusal = "Emerald Rogue Pokémon use the hack's own species, move and item tables and cannot be converted for other games.";
+            return null;
+        }
         if (bytes.Length != RadicalRedFormat.PcMonSize) return null;
         if (format == Unbound)
         {
@@ -151,6 +161,11 @@ internal static class CfruEntity
     public static (bool IsEgg, int Gender, int Ball, int HeldItem)? Facts(byte[] bytes, string format)
     {
         if (Describe(bytes, format, string.Empty) is not { } info) return null;
+        if (format == Rogue)
+        {
+            var rogue = new Engine.Rogue.RogueMon(bytes.ToArray(), 0, party: false);
+            return (rogue.IsEgg, rogue.Gender, Engine.Rogue.RogueData.BallToDisplay(rogue.Ball), info.HeldItem ?? 0);
+        }
         if (format == Unbound)
         {
             var mon = new UnboundMon(bytes.ToArray(), 0, party: false);
@@ -169,6 +184,7 @@ internal static class CfruEntity
     public static ISaveEngineSession? Host(byte[] bytes, string format, string? displayName)
     {
         if (Describe(bytes, format, string.Empty) is null) return null;
+        if (format == Rogue) return null; // no standalone Rogue host yet: Bank entries are viewed, not edited in place
         ISaveEngineSession session = format switch
         {
             Unbound => new UnboundEngineSession(BlankImage(SaveParser.UnboundSectorSignature), displayName),

@@ -88,6 +88,7 @@ public static class EventFlagService
     /// <summary>Why this session has no event editor, or null when it has one.</summary>
     public static string? UnsupportedReason(ISaveEngineSession session)
     {
+        if (session is Rogue.RogueEngineSession) return null;
         if (session is not SaveEngineSession engine)
             return "ROM hacks (Unbound, Radical Red) move the flag table and use their own numbering; PKHeX has no labels for them.";
         return engine.SaveFile switch
@@ -107,6 +108,7 @@ public static class EventFlagService
     {
         if (UnsupportedReason(session) is { } reason)
             throw new NotSupportedException(reason);
+        if (session is Rogue.RogueEngineSession rogue) return LoadRogue(rogue);
         var engine = (SaveEngineSession)session;
         var backend = Backend.For(engine.SaveFile);
         var baseline = Baselines.GetValue(engine, BuildBaseline);
@@ -172,8 +174,35 @@ public static class EventFlagService
         }).ToList();
     }
 
+    private static EventCatalog LoadRogue(Rogue.RogueEngineSession rogue)
+    {
+        var flags = new List<EventEntry>(Rogue.RogueEvents.FlagCount);
+        for (var id = 0; id < Rogue.RogueEvents.FlagCount; id++)
+        {
+            Rogue.RogueEvents.FlagNames.TryGetValue(id, out var raw);
+            var (category, label) = raw is null ? (Unlabeled, null) : Rogue.RogueEvents.Describe(raw);
+            flags.Add(new EventEntry(EventEntryKind.Flag, EventFlagBank.Event, id, id.ToString(CultureInfo.InvariantCulture), label, category,
+                rogue.GetFlag(id) ? 1 : 0, rogue.GetFlag(id, asOpened: true) ? 1 : 0, 0, 1, false, []));
+        }
+        var work = new List<EventEntry>(Rogue.RogueEvents.VarCount);
+        for (var index = 0; index < Rogue.RogueEvents.VarCount; index++)
+        {
+            Rogue.RogueEvents.VarNames.TryGetValue(index, out var raw);
+            var (category, label) = raw is null ? (Unlabeled, null) : Rogue.RogueEvents.Describe(raw);
+            work.Add(new EventEntry(EventEntryKind.Work, EventFlagBank.Event, index, index.ToString("0000", CultureInfo.InvariantCulture), label, category,
+                rogue.GetVar(index), rogue.GetVar(index, asOpened: true), 0, WorkMaxU16, false, []));
+        }
+        return new EventCatalog("Pokémon Emerald Rogue", "pokeemerald-rogue source", flags, work, HasBaseline: true);
+    }
+
     public static GenerationOutcome SetFlag(ISaveEngineSession session, EventFlagBank bank, int index, bool value)
     {
+        if (session is Rogue.RogueEngineSession rogue)
+        {
+            if ((uint)index >= Rogue.RogueEvents.FlagCount) return new GenerationOutcome(false, $"No flag {index} in this save.");
+            rogue.SetFlag(index, value);
+            return new GenerationOutcome(true, $"Flag {index}{(Rogue.RogueEvents.FlagNames.TryGetValue(index, out var name) ? $" {name}" : "")} {(value ? "set" : "cleared")}");
+        }
         if (session is not SaveEngineSession engine || !IsSupported(session))
             return new GenerationOutcome(false, "This save has no event flags.");
         var backend = Backend.For(engine.SaveFile);
@@ -191,6 +220,13 @@ public static class EventFlagService
     /// <summary>Stores a work var; values outside the var's storage range are refused, never wrapped.</summary>
     public static GenerationOutcome SetWork(ISaveEngineSession session, int index, long value)
     {
+        if (session is Rogue.RogueEngineSession rogue)
+        {
+            if ((uint)index >= Rogue.RogueEvents.VarCount) return new GenerationOutcome(false, $"No work {index} in this save.");
+            if (value is < 0 or > WorkMaxU16) return new GenerationOutcome(false, $"Work {index} holds 0–{WorkMaxU16}; {value} does not fit.");
+            rogue.SetVar(index, (int)value);
+            return new GenerationOutcome(true, $"Work {index:0000}{(Rogue.RogueEvents.VarNames.TryGetValue(index, out var name) ? $" {name}" : "")} = {value}");
+        }
         if (session is not SaveEngineSession engine || !IsSupported(session))
             return new GenerationOutcome(false, "This save has no event work.");
         var backend = Backend.For(engine.SaveFile);

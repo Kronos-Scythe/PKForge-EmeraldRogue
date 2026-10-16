@@ -49,7 +49,41 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         _sb2 = ReadBlock(_data, _sections, 0, 1);
         _sb1 = ReadBlock(_data, _sections, 1, 4);
         _storage = ReadBlock(_data, _sections, 5, 9);
+        _eventBaseline = _sb1.AsSpan(RogueEvents.FlagsOffset, RogueEvents.RegionLength).ToArray();
         _displayName = displayName;
+    }
+
+    // ── event flags and script vars (served to the shared event editor) ──
+    private readonly byte[] _eventBaseline;
+
+    internal bool GetFlag(int id, bool asOpened = false)
+    {
+        if ((uint)id >= RogueEvents.FlagCount) return false;
+        var source = asOpened ? _eventBaseline.AsSpan() : _sb1.AsSpan(RogueEvents.FlagsOffset, RogueEvents.RegionLength);
+        return (source[id >> 3] & (1 << (id & 7))) != 0;
+    }
+
+    internal void SetFlag(int id, bool value)
+    {
+        if ((uint)id >= RogueEvents.FlagCount) throw new ArgumentOutOfRangeException(nameof(id));
+        var offset = RogueEvents.FlagsOffset + (id >> 3);
+        var mask = (byte)(1 << (id & 7));
+        _sb1[offset] = value ? (byte)(_sb1[offset] | mask) : (byte)(_sb1[offset] & ~mask);
+        CommitSb1();
+    }
+
+    internal int GetVar(int index, bool asOpened = false)
+    {
+        if ((uint)index >= RogueEvents.VarCount) return 0;
+        var source = asOpened ? _eventBaseline.AsSpan() : _sb1.AsSpan(RogueEvents.FlagsOffset, RogueEvents.RegionLength);
+        return BinaryPrimitives.ReadUInt16LittleEndian(source[(RogueEvents.FlagBytes + index * 2)..]);
+    }
+
+    internal void SetVar(int index, int value)
+    {
+        if ((uint)index >= RogueEvents.VarCount) throw new ArgumentOutOfRangeException(nameof(index));
+        BinaryPrimitives.WriteUInt16LittleEndian(_sb1.AsSpan(RogueEvents.VarsOffset + index * 2), (ushort)value);
+        CommitSb1();
     }
 
     public SaveSnapshot Snapshot => BuildSnapshot(_displayName);
@@ -344,10 +378,46 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         CommitStorage();
     }
 
-    public bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null) => false;
+    /// <summary>The Bank's facts for an exported mon, read through Emerald Rogue's tables.</summary>
+    internal static BankEntryInfo Describe(RogueMon mon, string sourceName) =>
+        new(RogueData.NationalIdOf(mon.Species), RogueData.FormOf(mon.Species), mon.IsShiny, mon.Nickname, mon.Level, 3, sourceName,
+            RadicalRed.CfruEntity.Rogue, RogueData.ItemToNational(mon.HeldItem), default(SpriteTraits));
 
-    public SlotExport ExportSlot(int box, int slot) =>
-        throw NotYet("Exporting a Pokémon to the Bank");
+    public SlotExport ExportSlot(int box, int slot)
+    {
+        var mon = TryMon(box, slot);
+        if (mon is null || !mon.LooksValid)
+            throw new InvalidOperationException("That slot is empty.");
+        // The 80-byte record exactly as the game boxes it, so the Bank keeps every byte.
+        var bytes = mon.Buffer.AsSpan(mon.Offset, RogueMon.BoxSize).ToArray();
+        return new SlotExport(bytes, $"{RogueData.SpeciesName(mon.Species)}.pk3ex", RadicalRed.CfruEntity.Rogue);
+    }
+
+    /// <summary>Takes back an Emerald Rogue record (Bank, QR, shared file). Other games' formats are not converted yet.</summary>
+    public bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (EntityBytes.Normalize(format) != RadicalRed.CfruEntity.Rogue) return false;
+        if (fileBytes.Length != RogueMon.BoxSize) return false;
+        if (!new RogueMon(fileBytes.ToArray(), 0, party: false).LooksValid) return false;
+
+        if (box == -1)
+        {
+            if (PartyCount >= 6) return false;
+            var party = new RogueMon(_sb1, PartyOffset + PartyCount * RogueMon.PartySize, party: true);
+            party.Buffer.AsSpan(party.Offset, RogueMon.PartySize).Clear();
+            fileBytes.CopyTo(party.Buffer.AsSpan(party.Offset, RogueMon.BoxSize));
+            var rebuilt = new RogueMon(party.Buffer, party.Offset, party: true);
+            rebuilt.SetPartyLevelAndStats(RogueData.LevelForExperience(rebuilt.Experience), fullHeal: true);
+            SetPartyCount(PartyCount + 1);
+            CommitSb1();
+            return true;
+        }
+        if (TryMon(box, slot) is null) return false;
+        fileBytes.CopyTo(_storage.AsSpan(BoxMonOffset(box, slot), RogueMon.BoxSize));
+        CommitStorage();
+        return true;
+    }
 
     // ── generation (the wizard) ──
     internal GenerationOutcome GenerateInto(int box, int slot, GenerationRequest request) =>

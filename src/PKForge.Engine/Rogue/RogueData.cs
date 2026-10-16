@@ -25,7 +25,7 @@ internal static class RogueData
 
     public const int MaxLevel = 100;
 
-    private static IEnumerable<string[]> Rows(string file)
+    internal static IEnumerable<string[]> Rows(string file)
     {
         using var stream = typeof(RogueData).Assembly.GetManifestResourceStream("rogue." + file)
             ?? throw new InvalidOperationException($"Missing embedded Rogue table {file}.");
