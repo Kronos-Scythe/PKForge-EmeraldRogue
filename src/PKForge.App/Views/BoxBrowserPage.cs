@@ -2397,7 +2397,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             new PadOption("Wonder cards", IconPath: "events", Detail: "Mystery Gift events and the gift cards stored in this save."),
             // Viewable in Hardcore mode; each world editor refuses writes itself.
             WorldEventsMenu.HasAny(session) ? new PadOption("World & events", IconPath: "map", Detail: "Clocks, roaming Pokémon, one-time encounters and other world data.") : null,
-            new PadOption("Export modified save", IconPath: "export", Detail: "Share a copy of the edited save file."),
+            new PadOption("Export modified save", IconPath: "export", Detail: "Optional: share a copy. Edits are already written straight into the open save file."),
             new PadOption("Restore points", IconPath: "history", Detail: "Backups made before each change; go back to one."),
             new PadOption("Close save", IconPath: "quit")).ToList();
         if (session.GetGrandUndergroundItems().Count != 0 && Guard.Allows(SaveAction.EditInventory))
