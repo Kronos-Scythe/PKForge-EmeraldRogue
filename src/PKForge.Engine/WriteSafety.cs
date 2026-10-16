@@ -29,6 +29,11 @@ internal static class WriteSafety
     private static Parsed? Parse(ReadOnlyMemory<byte> bytes)
     {
         var decoded = RetroArchSaveContainer.Decode(bytes.Span);
+        if (Rogue.RogueFormat.IsEmeraldRogue(decoded))
+        {
+            var session = new Rogue.RogueEngineSession(bytes);
+            return new Parsed("Emerald Rogue", () => session.SlotImages().ToList(), null);
+        }
         if (SaveParser.IsPokemonUnbound(decoded))
         {
             var session = new Unbound.UnboundEngineSession(bytes);

@@ -48,7 +48,27 @@ Boxes 0-9 hold normal mons (10 valid in the sample). Boxes 10-13 hold Rogue's ow
 failed the Pokémon checksum). PKForge must expose 10 boxes and keep 10-13 byte-for-byte untouched.
 Four fusion mons are stored in a separate area.
 
-## Plan for PKForge (branch `rogue-support` of the local fork)
+## Further verified facts (implementation)
+
+- Nature is a stored field: `PID % 25 XOR hiddenNatureModifier` (5 bits at box offset 0x12, bits 3-7). Shiny is a stored
+  flag (substruct M word @8, bits 0-2), gender flag bits 3-5 (1 = female), ability slot bits 29-30 (0-2).
+  No PID rerolling is needed for nature/shiny/gender/ability edits.
+- Experience is a flat 300 per level for every species (`Rogue_ModifyExperienceTables`): level = exp / 300.
+- Ball ids are `BALL_POKE = 0 ... BALL_ROGUE = 27` (pokeball.h), not item ids.
+- Bag: one flat list of 450 slots at SaveBlock1+1400 (item u16, quantity u16 XOR low 16 bits of the key); pockets come
+  from the item table. PC items at +1200 are NOT XORed.
+- SaveBlock2: TID u16 @10, SID u16 @12, play hours u16 @14, minutes @16. Box names (9 bytes) @33604 of storage, verified.
+- Engine/UI tables are generated: `tools/rogue/gen_rogue_data.py` (species, moves incl. base PP, abilities, items).
+- `tools/rogue/verify_save.py` is the Python reference decoder; `RogueSessionTests` mirrors it in C#.
+
+## Status
+
+Implemented on branch `rogue-support`: `RogueFormat`, `RogueMon`, `RogueData`, `RogueEngineSession`, detection ahead of
+the stock and CFRU routes (`SaveFormat.EmeraldRogue`, `SaveLayoutFamily.EmeraldRogue`), write-safety and generator routing.
+Not implemented yet: Bank import/export, Pokédex editing (which of the two 197-byte arrays is seen vs caught is
+unconfirmed), flags/vars, form-index mapping for Rogue-only forms, legality.
+
+## Original plan (branch `rogue-support` of the local fork)
 
 1. `src/PKForge.Engine/Rogue/`: `RogueFormat` (envelope, slot choice, 4084 windows), `RogueMon`
    (80/104-byte codec), `RogueData` (generated tables), `RogueEngineSession` (modelled on

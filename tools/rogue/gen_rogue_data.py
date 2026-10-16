@@ -168,7 +168,8 @@ def main():
         pokemon_c = preprocess(rogue, "src/pokemon.c", stub)
         item_c = preprocess(rogue, "src/item.c", stub)
         text_pp = {}
-        for name, src_file in (("moves", "src/data/text/move_names.h"), ("abilities", "src/data/text/abilities.h")):
+        for name, src_file in (("moves", "src/data/text/move_names.h"), ("abilities", "src/data/text/abilities.h"),
+                               ("moveinfo", "src/data/battle_moves.h")):
             tu = stub / f"{name}.c"
             tu.write_text('#include "global.h"\n#include "constants/moves.h"\n#include "constants/abilities.h"\n'
                           f'#include "{src_file[len("src/"):]}"\n')
@@ -255,6 +256,16 @@ def main():
     move_rows = sorted((mev[k], n, pk_moves.get(n, 0)) for k, n in move_names_raw.items())
     ability_rows = sorted((aev[k], n, pk_abil.get(n, 0)) for k, n in ability_names_raw.items())
 
+    move_info = parse_array(text_pp["moveinfo"], r"const struct BattleMove gBattleMoves_Mainline\[[^\]]*\]\s*=\s*\{")
+    pp_exprs = {}
+    for k, body in move_info.items():
+        f = dict(split_top_level(body))
+        if "pp" in f:
+            pp_exprs[k] = f["pp"]
+    ppv = evaluator(rogue, set(pp_exprs.values()) | set(pp_exprs.keys()))
+    move_pp = {ppv[k]: ppv[e] for k, e in pp_exprs.items() if k in ppv and e in ppv}
+    move_rows = [(i, n, nat, move_pp.get(i, 0)) for i, n, nat in move_rows]
+
     # ---- items ------------------------------------------------------------------------------------
     items_raw = parse_array(item_c, r"const struct Item gItems\[\]\s*=\s*\{")
     item_fields = {k: dict(split_top_level(b)) for k, b in items_raw.items()}
@@ -281,7 +292,7 @@ def main():
     dump("rogue_species.tsv",
          ["id", "name", "natdex", "baseId", "form", "hp", "atk", "def", "spe", "spa", "spd",
           "type1", "type2", "ability1", "ability2", "ability3", "genderRatio", "growth"], species_rows)
-    dump("rogue_moves.tsv", ["id", "name", "national"], move_rows)
+    dump("rogue_moves.tsv", ["id", "name", "national", "pp"], move_rows)
     dump("rogue_abilities.tsv", ["id", "name", "national"], ability_rows)
     dump("rogue_items.tsv", ["id", "name", "pocket", "national"], item_rows)
     print(f"species {len(species_rows)} moves {len(move_rows)} abilities {len(ability_rows)} items {len(item_rows)}")

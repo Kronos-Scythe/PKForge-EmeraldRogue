@@ -20,6 +20,8 @@ public enum SaveFormat
     RadicalRed = 3,
     /// <summary>The GS Chronicles CFRU layout (sector footers stamped 0x66290096, 25 boxes).</summary>
     GsChronicles = 4,
+    /// <summary>Pokémon Emerald Rogue (EX): a 14-section save with 4084-byte windows, not the retail Emerald layout.</summary>
+    EmeraldRogue = 5,
 }
 
 /// <summary>
@@ -41,6 +43,8 @@ public enum SaveLayoutFamily
     GsChroniclesCfru = 6,
     /// <summary>Diamond and Pearl: one save format, the edition is not in the bytes.</summary>
     DiamondPearl = 7,
+    /// <summary>Emerald Rogue's own envelope (32 x 4 KB sectors, 4084-byte checksum windows).</summary>
+    EmeraldRogue = 8,
 }
 
 /// <summary>
@@ -154,6 +158,7 @@ public static class SaveIdentityRules
             "Unbound" => SaveFormat.Unbound,
             "Radical Red" => SaveFormat.RadicalRed,
             "GS Chronicles" => SaveFormat.GsChronicles,
+            "Emerald Rogue" => SaveFormat.EmeraldRogue,
             _ => SaveFormat.Standard,
         };
         return new SaveIdentityGuess(label, FamilyOf(engineGame), format, suggested, label);
@@ -168,6 +173,7 @@ public static class SaveIdentityRules
         "Unbound" => SaveLayoutFamily.UnboundCfru,
         "Radical Red" => SaveLayoutFamily.Cfru,
         "GS Chronicles" => SaveLayoutFamily.GsChroniclesCfru,
+        "Emerald Rogue" => SaveLayoutFamily.EmeraldRogue,
         _ => SaveLayoutFamily.Other,
     };
 
@@ -216,6 +222,10 @@ public static class SaveIdentityRules
         [
             new("gschronicles", "Pokémon GS Chronicles", SaveFormat.GsChronicles, "Pokémon GS Chronicles", true),
         ],
+        SaveLayoutFamily.EmeraldRogue =>
+        [
+            new("emeraldrogue", "Pokémon Emerald Rogue", SaveFormat.EmeraldRogue, "Pokémon Emerald Rogue", true),
+        ],
         _ =>
         [
             new("retail", detectedLabel, SaveFormat.Auto, detectedLabel, false),
@@ -242,6 +252,7 @@ public static class SaveIdentityRules
         "unbound" or "hack-cfru-unbound" => SaveFormat.Unbound,
         "radicalred" or "hack-cfru" => SaveFormat.RadicalRed,
         "gschronicles" => SaveFormat.GsChronicles,
+        "emeraldrogue" => SaveFormat.EmeraldRogue,
         "emerald" or "hack-emerald" or "ruby" or "sapphire" or "hack-rs" or "firered" or "leafgreen" or "hack-frlg"
             or "diamond" or "pearl" or "hack-dp" => SaveFormat.Standard,
         _ => SaveFormat.Auto,

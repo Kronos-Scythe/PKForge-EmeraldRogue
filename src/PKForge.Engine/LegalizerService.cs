@@ -28,6 +28,8 @@ public sealed class LegalizerService : ILegalizerService
 
     public GenerationOutcome Generate(ISaveEngineSession session, int box, int slot, GenerationRequest request)
     {
+        if (session is Rogue.RogueEngineSession rogue)
+            return rogue.GenerateInto(box, slot, request);
         if (session is Unbound.UnboundEngineSession unbound)
             return unbound.GenerateInto(box, slot, request);
         if (session is RadicalRed.CfruEngineSession radicalRed)
@@ -39,6 +41,8 @@ public sealed class LegalizerService : ILegalizerService
     public GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText,
         bool allowUnsupportedSpecies = false)
     {
+        if (session is Rogue.RogueEngineSession rogue)
+            return rogue.GenerateFromShowdownText(box, slot, showdownText);
         if (session is Unbound.UnboundEngineSession unbound)
             return unbound.GenerateFromShowdownText(box, slot, showdownText);
         if (session is RadicalRed.CfruEngineSession radicalRed)

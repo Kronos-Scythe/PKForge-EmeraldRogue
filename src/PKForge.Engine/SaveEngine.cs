@@ -17,23 +17,26 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     {
         if (format == SaveFormat.Auto) return OpenSession(bytes, displayName);
         var decoded = RetroArchSaveContainer.Decode(bytes.Span);
+        var rogue = Rogue.RogueFormat.IsEmeraldRogue(decoded);
         var unbound = SaveParser.IsPokemonUnbound(decoded);
         var gsc = !unbound && SaveParser.IsPokemonGsChronicles(decoded);
         var cfru = !unbound && !gsc && SaveParser.IsPokemonRadicalRed(decoded);
         return format switch
         {
+            SaveFormat.EmeraldRogue when rogue => new Rogue.RogueEngineSession(bytes, displayName),
             SaveFormat.Unbound when unbound => OpenUnbound(bytes, displayName),
             SaveFormat.RadicalRed when cfru => OpenRadicalRed(bytes, displayName),
             SaveFormat.GsChronicles when gsc => OpenGsChronicles(bytes, displayName),
-            SaveFormat.Standard when !unbound && !gsc && !cfru => new SaveEngineSession(bytes, displayName),
+            SaveFormat.Standard when !rogue && !unbound && !gsc && !cfru => new SaveEngineSession(bytes, displayName),
             _ => throw new InvalidDataException(
-                $"This save was set to open as {FormatName(format)}, but its bytes carry the {(unbound ? "Unbound" : gsc ? "GS Chronicles" : cfru ? "CFRU (Radical Red)" : "standard")} layout. " +
+                $"This save was set to open as {FormatName(format)}, but its bytes carry the {(rogue ? "Emerald Rogue" : unbound ? "Unbound" : gsc ? "GS Chronicles" : cfru ? "CFRU (Radical Red)" : "standard")} layout. " +
                 "Change the game from the save's menu on the home screen. The file was not touched."),
         };
     }
 
     private static string FormatName(SaveFormat format) => format switch
     {
+        SaveFormat.EmeraldRogue => "Emerald Rogue",
         SaveFormat.Unbound => "Unbound",
         SaveFormat.RadicalRed => "Radical Red / CFRU",
         SaveFormat.GsChronicles => "GS Chronicles",
@@ -42,6 +45,8 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
 
     public SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
+        if (Rogue.RogueFormat.IsEmeraldRogue(RetroArchSaveContainer.Decode(bytes.Span)))
+            return new Rogue.RogueEngineSession(bytes, displayName).Snapshot;
         if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName).Snapshot;
         if (SaveParser.IsPokemonGsChronicles(RetroArchSaveContainer.Decode(bytes.Span)))
@@ -68,6 +73,8 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
 
     public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
+        if (Rogue.RogueFormat.IsEmeraldRogue(RetroArchSaveContainer.Decode(bytes.Span)))
+            return new Rogue.RogueEngineSession(bytes, displayName);
         if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName);
         if (SaveParser.IsPokemonGsChronicles(RetroArchSaveContainer.Decode(bytes.Span)))
@@ -98,6 +105,7 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         try
         {
             var decoded = RetroArchSaveContainer.Decode(bytes.Span);
+            if (Rogue.RogueFormat.IsEmeraldRogue(decoded)) return true;
             if (SaveParser.IsPokemonUnbound(decoded)) return true;
             if (SaveParser.IsPokemonGsChronicles(decoded)) return true;
             if (SaveParser.IsPokemonRadicalRed(decoded)) return true;
@@ -187,6 +195,12 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
         var raw = RetroArchSaveContainer.Decode(bytes.Span);
+        // Emerald Rogue has its own envelope; the stock parser may not recognize it at all.
+        if (Rogue.RogueFormat.IsEmeraldRogue(raw))
+        {
+            using var rogue = new Rogue.RogueEngineSession(bytes, displayName);
+            return new SaveDescription("Emerald Rogue", 3, rogue.TrainerName, rogue.PlayTime, "EN");
+        }
         if (!SaveParser.TryGetSaveFile(raw, out var save) || save is null)
             return null;
 

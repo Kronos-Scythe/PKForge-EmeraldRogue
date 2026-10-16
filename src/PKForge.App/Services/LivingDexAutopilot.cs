@@ -129,7 +129,7 @@ public static class LivingDexAutopilot
         ISafeSaveWriter writer, bool hardcore, string? openId, ReadOnlyMemory<byte>? openBytes)
     {
         if (hardcore) return (LivingDexExclusion.Hardcore, null);
-        var hack = save.Format is SaveFormat.Unbound or SaveFormat.RadicalRed or SaveFormat.GsChronicles
+        var hack = save.Format is SaveFormat.Unbound or SaveFormat.RadicalRed or SaveFormat.GsChronicles or SaveFormat.EmeraldRogue
             || save.Identity?.GameChoiceId?.StartsWith("hack", StringComparison.Ordinal) == true
             || session is not SaveEngineSession
             || writer.LayoutRiskOf(save.DocumentId, session.Snapshot) is not null
