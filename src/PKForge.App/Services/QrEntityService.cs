@@ -89,13 +89,13 @@ public static class QrEntityService
     public static byte[]? TryDecodeText(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
-        var clean = new string([.. text.Where(c => !char.IsWhiteSpace(c))]);
+        var clean = string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
         byte[]? bytes = null;
-        try { bytes = Convert.FromBase64String(clean); } catch (FormatException) { }
+        try { bytes = Convert.FromBase64String(clean); } catch (System.FormatException) { }
         if (bytes is null || QrEntityCodec.TryParse(bytes) is null)
         {
             try { bytes = Convert.FromHexString(clean.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? clean[2..] : clean); }
-            catch (FormatException) { bytes = null; }
+            catch (System.FormatException) { bytes = null; }
         }
         return bytes is not null && QrEntityCodec.TryParse(bytes) is not null ? bytes : null;
     }
