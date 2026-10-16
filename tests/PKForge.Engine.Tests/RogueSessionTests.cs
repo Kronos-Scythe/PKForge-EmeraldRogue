@@ -138,4 +138,17 @@ public sealed class RogueSessionTests
         Assert.Equal(300u, RogueData.ExperienceAtLevel(1));
         Assert.Equal(36, RogueData.LevelForExperience(10800));
     }
+
+    [Fact]
+    public void Held_item_edit_uses_picker_ids_and_is_write_safe()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var held = session.GetItemNames().ToList().FindIndex(name => name == "Leftovers");
+        Assert.True(held > 0);
+        session.ApplyEdit(-1, 0, new EntityEdit(HeldItem: held));
+        Assert.Equal(held, session.ReadEntity(-1, 0).HeldItem);
+        var candidate = session.Serialize();
+        Assert.True(Engine.CheckWriteSafety(bytes, candidate, WriteScope.Only(new SlotRef(-1, 0))) is null);
+    }
 }

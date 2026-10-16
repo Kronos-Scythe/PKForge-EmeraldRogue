@@ -119,7 +119,7 @@ internal sealed class RogueEngineSession : ISaveEngineSession
             mon.Level,
             mon.Nature,
             RogueData.AbilityToNational(ability),
-            RogueData.ItemToNational(mon.HeldItem),
+            mon.HeldItem,
             RogueData.MoveToNational(moves[0]), RogueData.MoveToNational(moves[1]),
             RogueData.MoveToNational(moves[2]), RogueData.MoveToNational(moves[3]),
             ivs, evs,
@@ -157,12 +157,9 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         if (edit.Ability is { } ability && ability != RogueData.AbilityToNational(RogueData.AbilityOf(mon.Species, mon.AbilityNum))
             && RogueData.AbilityFromNational(ability) is > 0 and var romAbility)
             SetAbility(mon, romAbility);
-        if (edit.HeldItem is { } item && item != RogueData.ItemToNational(mon.HeldItem))
-        {
-            var romItem = item == 0 ? 0 : RogueData.ItemFromNational(item);
-            if (item == 0 || romItem > 0)
-                mon.HeldItem = romItem;
-        }
+        // Held items travel as ROM ids end to end, matching GetItemNames() (the picker index).
+        if (edit.HeldItem is { } item && item != mon.HeldItem && item is >= 0 and <= ushort.MaxValue)
+            mon.HeldItem = item;
         int?[] wanted = [edit.Move1, edit.Move2, edit.Move3, edit.Move4];
         var stored = mon.Moves;
         var pp = mon.MovePp;
@@ -440,7 +437,7 @@ internal sealed class RogueEngineSession : ISaveEngineSession
 
     /// <summary>The grid's held-item flag: the bridged national id, or -1 when the item has no national twin.</summary>
     private static int HeldItemId(RogueMon mon) =>
-        mon.HeldItem == 0 ? 0 : RogueData.ItemToNational(mon.HeldItem) is > 0 and var national ? national : -1;
+        mon.HeldItem;
 
     public ReadOnlyMemory<byte> Serialize()
     {
