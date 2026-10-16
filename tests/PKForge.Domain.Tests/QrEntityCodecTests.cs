@@ -70,7 +70,7 @@ public sealed class QrEntityCodecTests
         Bad(payload, 0, (byte)'X'); // magic
         Bad(payload, 4, 2); // unknown envelope version
         Bad(payload, 5, 0); // generation below range
-        Bad(payload, 5, 10); // generation above range
+        Bad(payload, 5, 11); // generation above range
         Bad(payload, 6, 0); // zero entity length
         Bad(payload, 6, 200); // declared length beyond the payload
 
@@ -92,7 +92,7 @@ public sealed class QrEntityCodecTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => QrEntityCodec.MakePayload([], 7, "Mew")); // empty entity
         Assert.Throws<ArgumentOutOfRangeException>(() => QrEntityCodec.MakePayload([1], 0, "Mew")); // no generation
-        Assert.Throws<ArgumentOutOfRangeException>(() => QrEntityCodec.MakePayload([1], 10, "Mew")); // beyond Gen 9
+        Assert.Throws<ArgumentOutOfRangeException>(() => QrEntityCodec.MakePayload([1], 11, "Mew")); // beyond the Rogue marker (10)
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             QrEntityCodec.MakePayload([1], 7, new string('x', 256))); // name overflows the 1-byte length field
     }
