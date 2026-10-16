@@ -731,20 +731,199 @@ internal sealed class RogueEngineSession : ISaveEngineSession
     public GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot) =>
         throw NotYet("Emerald Rogue encounter cards");
 
-    public bool SupportsBoxTools => false;
-    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false) =>
-        throw NotYet("Emerald Rogue box sorting");
+    public bool SupportsBoxTools => true;
+
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var targets = (boxes ?? Enumerable.Range(0, Boxes).ToList()).Where(b => (uint)b < Boxes).Distinct().OrderBy(b => b).ToList();
+        var mons = new List<byte[]>();
+        foreach (var box in targets)
+            for (var slot = 0; slot < SlotsPerBox; slot++)
+                if (TryMon(box, slot) is { LooksValid: true } mon)
+                    mons.Add(_storage.AsSpan(BoxMonOffset(box, slot), RogueMon.BoxSize).ToArray());
+
+        RogueMon View(byte[] raw) => new(raw, 0, party: false);
+        int Dex(byte[] raw) => RogueData.NationalIdOf(View(raw).Species);
+        int Form(byte[] raw) => RogueData.FormOf(View(raw).Species);
+        string Name(byte[] raw) => RogueData.SpeciesName(View(raw).Species);
+        int Type(byte[] raw) => RogueData.TypesOf(View(raw).Species) is { Count: > 0 } t ? t[0] : 99;
+        var ordered = criteria switch
+        {
+            SortCriteria.Alphabetical => mons.OrderBy(Name, StringComparer.OrdinalIgnoreCase).ThenBy(Dex).ToList(),
+            SortCriteria.LevelDesc => mons.OrderByDescending(raw => View(raw).Level).ThenBy(Dex).ToList(),
+            SortCriteria.IvTotalDesc => mons.OrderByDescending(raw => View(raw).IVs.Sum()).ThenBy(Dex).ToList(),
+            SortCriteria.Type => mons.OrderBy(Type).ThenBy(Dex).ThenBy(Form).ToList(),
+            SortCriteria.ShinyFirst => mons.OrderByDescending(raw => View(raw).IsShiny ? 1 : 0).ThenBy(Dex).ThenBy(Form).ToList(),
+            SortCriteria.AgeOldest => mons, // Gen 3 mons carry no met date: keep storage order
+            _ => mons.OrderBy(Dex).ThenBy(Form).ToList(),
+        };
+        if (reverse) ordered.Reverse();
+
+        var placed = 0;
+        foreach (var box in targets)
+            for (var slot = 0; slot < SlotsPerBox; slot++)
+            {
+                var target = _storage.AsSpan(BoxMonOffset(box, slot), RogueMon.BoxSize);
+                if (placed < ordered.Count) ordered[placed++].CopyTo(target);
+                else target.Clear();
+            }
+        CommitStorage();
+        return ordered.Count;
+    }
 
     public int PlaceLivingDex(byte[] compressedBundle) =>
         throw NotYet("The Emerald Rogue living dex (its species table needs Emerald Rogue-legal templates)");
 
-    public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null) =>
-        throw NotYet("The Emerald Rogue batch editor");
+    public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var touched = 0;
+        foreach (var box in boxes ?? Enumerable.Range(-1, Boxes + 1).ToList())
+        {
+            if (box != -1 && (uint)box >= Boxes) continue;
+            for (var slot = 0; slot < (box == -1 ? 6 : SlotsPerBox); slot++)
+                if (ApplyBatchToSlot(box, slot, instructions)) touched++;
+        }
+        return touched;
+    }
 
-    public int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions) =>
-        throw NotYet("The Emerald Rogue batch editor");
-    public void SwapBoxes(int a, int b) => throw NotYet("Emerald Rogue box swapping");
-    public void DeleteBox(int box) => throw NotYet("Emerald Rogue box management");
+    public int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var touched = 0;
+        foreach (var (box, slot) in slots)
+            if (ApplyBatchToSlot(box, slot, instructions)) touched++;
+        return touched;
+    }
+
+    /// <summary>PKHeX-style ".Prop=Value" lines against one mon; false when empty or nothing changed.</summary>
+    private bool ApplyBatchToSlot(int box, int slot, IReadOnlyList<string> instructions)
+    {
+        if (TryMon(box, slot) is not { LooksValid: true } mon) return false;
+        var before = mon.Buffer.AsSpan(mon.Offset, mon.Size).ToArray();
+        var rnd = Random.Shared;
+        foreach (var raw in instructions)
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+            var eq = line.IndexOf('=');
+            var prop = (eq > 0 ? line[..eq] : line).Trim().TrimStart('.').ToLowerInvariant();
+            var value = eq > 0 ? line[(eq + 1)..].Trim() : "1";
+            int Number() => value == "$rand" ? rnd.Next(0, 32) : value == "$shiny" ? 1 : int.TryParse(value, out var n) ? n : 0;
+            switch (prop)
+            {
+                case "level" or "lv":
+                {
+                    var level = Math.Clamp(Number(), 1, 100);
+                    mon.Experience = RogueData.ExperienceAtLevel(level);
+                    break;
+                }
+                case "nature": mon.Nature = Math.Clamp(Number(), 0, 24); break;
+                case "friendship": mon.Friendship = Math.Clamp(Number(), 0, 255); break;
+                case "ball" when RogueData.TryStoreBall(Number(), out var romBall): mon.Ball = romBall; break;
+                case "helditem" or "item": mon.HeldItem = Math.Clamp(Number(), 0, ushort.MaxValue); break;
+                case "move1" or "move2" or "move3" or "move4":
+                {
+                    var index = prop[^1] - '1';
+                    var national = Number();
+                    var rom = national == 0 ? 0 : RogueData.MoveFromNational(national);
+                    if (national != 0 && rom == 0) break;
+                    var moves = mon.Moves; var pp = mon.MovePp;
+                    moves[index] = rom; pp[index] = RogueData.MoveBasePp(rom);
+                    mon.Moves = moves; mon.MovePp = pp;
+                    break;
+                }
+                case "iv_hp" or "iv_atk" or "iv_def" or "iv_spa" or "iv_spd" or "iv_spe":
+                {
+                    var ivs = mon.IVs;
+                    ivs[StatIndex(prop)] = Math.Clamp(Number(), 0, 31);
+                    mon.IVs = ivs;
+                    break;
+                }
+                case "ev_hp" or "ev_atk" or "ev_def" or "ev_spa" or "ev_spd" or "ev_spe":
+                {
+                    var evs = mon.EVs;
+                    evs[StatIndex(prop)] = Math.Clamp(Number(), 0, 255);
+                    mon.EVs = evs;
+                    break;
+                }
+                case "shiny":
+                    mon.IsShiny = value.Equals("yes", StringComparison.OrdinalIgnoreCase) || value.Equals("true", StringComparison.OrdinalIgnoreCase) || Number() == 1;
+                    break;
+                case "nickname" when value.Length > 0: mon.Nickname = value; break;
+                case "ot" or "trainer" when value.Length > 0: mon.SetOriginalTrainerName(value); break;
+                case "heal" or "healpokemon" or "healpp":
+                {
+                    var moves = mon.Moves;
+                    mon.MovePp = [.. moves.Select(RogueData.MoveBasePp)];
+                    break;
+                }
+            }
+        }
+        if (mon.Buffer.AsSpan(mon.Offset, mon.Size).SequenceEqual(before)) return false;
+        if (mon.Party)
+        {
+            var heal = instructions.Any(i => i.TrimStart('.').StartsWith("heal", StringComparison.OrdinalIgnoreCase));
+            mon.SetPartyLevelAndStats(mon.Level, fullHeal: heal);
+        }
+        Commit(box);
+        return true;
+    }
+
+    private static int StatIndex(string prop) => prop[^3..] switch
+    {
+        "_hp" => 0, "atk" => 1, "def" => 2, "spa" => 3, "spd" => 4, _ => 5,
+    };
+
+    public void SwapBoxes(int a, int b)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (a == b) return;
+        if ((uint)a >= Boxes || (uint)b >= Boxes)
+            throw new InvalidOperationException("Boxes 11-14 hold Emerald Rogue's run data and cannot move.");
+        SwapBoxBytes(a, b);
+        CommitStorage();
+    }
+
+    private void SwapBoxBytes(int a, int b)
+    {
+        var size = SlotsPerBox * RogueMon.BoxSize;
+        var first = _storage.AsSpan(BoxMonOffset(a, 0), size).ToArray();
+        _storage.AsSpan(BoxMonOffset(b, 0), size).CopyTo(_storage.AsSpan(BoxMonOffset(a, 0), size));
+        first.CopyTo(_storage.AsSpan(BoxMonOffset(b, 0), size));
+        var nameA = _storage.AsSpan(BoxNamesOffset + a * BoxNameLength, BoxNameLength).ToArray();
+        _storage.AsSpan(BoxNamesOffset + b * BoxNameLength, BoxNameLength).CopyTo(_storage.AsSpan(BoxNamesOffset + a * BoxNameLength, BoxNameLength));
+        nameA.CopyTo(_storage.AsSpan(BoxNamesOffset + b * BoxNameLength, BoxNameLength));
+    }
+
+    /// <summary>Merges the box into the first free slots of the others (anything left over is released), then closes the gap.</summary>
+    public void DeleteBox(int box)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if ((uint)box >= Boxes) return;
+        for (var slot = 0; slot < SlotsPerBox; slot++)
+        {
+            if (TryMon(box, slot) is not { LooksValid: true }) continue;
+            var raw = _storage.AsSpan(BoxMonOffset(box, slot), RogueMon.BoxSize).ToArray();
+            var landed = false;
+            for (var target = 0; target < Boxes && !landed; target++)
+            {
+                if (target == box) continue;
+                for (var free = 0; free < SlotsPerBox; free++)
+                {
+                    if (TryMon(target, free) is { LooksValid: true }) continue;
+                    raw.CopyTo(_storage.AsSpan(BoxMonOffset(target, free), RogueMon.BoxSize));
+                    landed = true;
+                    break;
+                }
+            }
+            _storage.AsSpan(BoxMonOffset(box, slot), RogueMon.BoxSize).Clear();
+        }
+        for (var next = box; next < Boxes - 1; next++)
+            SwapBoxBytes(next, next + 1);
+        CommitStorage();
+    }
     public IReadOnlyList<CountedEntry> GetPokeBeans() => [];
     public int SetPokeBeanCount(int index, int count) => 0;
     public IReadOnlyList<UndergroundItem> GetGrandUndergroundItems() => [];

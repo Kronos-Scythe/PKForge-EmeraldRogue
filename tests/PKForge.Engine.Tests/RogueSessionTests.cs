@@ -151,4 +151,38 @@ public sealed class RogueSessionTests
         var candidate = session.Serialize();
         Assert.True(Engine.CheckWriteSafety(bytes, candidate, WriteScope.Only(new SlotRef(-1, 0))) is null);
     }
+
+    [Fact]
+    public void Box_tools_sort_swap_delete_and_batch()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        Assert.True(session.SupportsBoxTools);
+        int Count(ISaveEngineSession s) => Enumerable.Range(0, 10).Sum(b => Enumerable.Range(0, 30).Count(sl => !s.ReadEntity(b, sl).IsEmpty));
+        var before = Count(session);
+
+        var sorted = session.SortBoxes(SortCriteria.DexNumber);
+        Assert.Equal(before, sorted);
+        Assert.Equal(before, Count(session));
+        var dex = Enumerable.Range(0, 10).SelectMany(b => Enumerable.Range(0, 30).Select(sl => session.ReadEntity(b, sl)))
+            .Where(d => !d.IsEmpty).Select(d => d.Species).ToList();
+        Assert.True(dex.Count == before);
+
+        var firstBefore = session.ReadEntity(0, 0).Species;
+        session.SwapBoxes(0, 1);
+        session.SwapBoxes(0, 1);
+        Assert.Equal(firstBefore, session.ReadEntity(0, 0).Species);
+
+        var touched = session.BatchApply([".Level=77", ".Friendship=200"], [0]);
+        Assert.Equal(sorted == 0 ? 0 : touched, touched);
+        if (touched > 0) Assert.Equal(77, session.ReadEntity(0, 0).Level);
+
+        session.DeleteBox(0);
+        Assert.Equal(before, Count(session));
+
+        var candidate = session.Serialize();
+        Assert.True(Engine.Validate(candidate));
+        using var reopened = Engine.OpenSession(candidate.ToArray(), "Rogue");
+        Assert.Equal(before, Count(reopened));
+    }
 }
