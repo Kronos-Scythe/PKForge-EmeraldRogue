@@ -80,3 +80,11 @@ unconfirmed), flags/vars, form-index mapping for Rogue-only forms, legality.
    not transferable.
 4. Lock boxes 10-13; no legality verdict.
 5. Tests: this sample (read, edit, write, re-read byte-identical), plus a fresh and a late save.
+
+## Box tools, batch editor, Bank, QR, flags (added after first device test)
+
+- Box sorting, swap/delete boxes and the batch editor (`.Level=`, `.Friendship=`, `.HeldItem=`, `.IV_*`, `.EV_*`, `.Shiny`, `.Nickname`, `.Heal`) run on boxes 1-10 only; boxes 11-14 stay locked.
+- Bank format `PK3EX` = the 80-byte box record as stored; QR envelope "generation" 10 marks it. Rogue mons cannot convert to other games and vice versa (not implemented).
+- No-camera import: pick a QR image, or "Paste a .pk code" (base64/hex of the PKF1 envelope from the clipboard), or import a `.pk3ex` file.
+- Event flags/vars: flags at SaveBlock1+0x14D0 (300 bytes), vars at +0x15FC (256 x u16, VAR 0x4000+); names from the Rogue source (`rogue_flags.tsv`, `rogue_vars.tsv`). Verified: "Rogue Run Active" reads on in the mid-run sample.
+- Held items travel as ROM ids end to end (picker index == stored id); an empty item shows "None".

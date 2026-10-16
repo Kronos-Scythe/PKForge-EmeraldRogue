@@ -1432,7 +1432,8 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             new PadOption("Create a Pokémon", IconPath: "create", Detail: "Build a legal Pokémon step by step."),
             new PadOption("Paste a Showdown set", IconPath: "script", Detail: "Turns a Pokémon Showdown text set into a Pokémon."),
             new PadOption("Import .pk file", IconPath: "import", Detail: "Adds Pokémon from .pk files you pick."),
-            new PadOption("Scan a .pk QR", IconPath: "scan", Detail: "Pick a picture of a .pk QR code to add its Pokémon."));
+            new PadOption("Scan a .pk QR", IconPath: "scan", Detail: "Pick a picture of a .pk QR code to add its Pokémon."),
+            new PadOption("Paste a .pk code", IconPath: "scan", Detail: "Add a Pokémon from code text copied to the clipboard (no camera needed)."));
         switch (choice)
         {
             case "Create a Pokémon" or "Paste a Showdown set" when session is null:
@@ -1490,6 +1491,15 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 if (received is null) return;
                 Deposit(new GeneratedEntity(received.Data, received.Info));
                 _boxViewModel.Status = "Received a Pokémon over QR.";
+                return;
+            }
+            case "Paste a .pk code":
+            {
+                var engine = IPlatformApplication.Current!.Services.GetRequiredService<ISaveEngine>();
+                var received = await Services.QrEntityService.PasteAsync(_hostGrid, engine);
+                if (received is null) return;
+                Deposit(new GeneratedEntity(received.Data, received.Info));
+                _boxViewModel.Status = "Received a Pokémon from pasted code.";
                 return;
             }
             case "Import .pk file":

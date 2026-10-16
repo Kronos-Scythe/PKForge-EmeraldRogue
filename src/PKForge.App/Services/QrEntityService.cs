@@ -60,6 +60,48 @@ public static class QrEntityService
             return null;
         }
 
+        return await ReviewAsync(host, engine, payload, contextNote);
+    }
+
+    /// <summary>The text form of a PKF1 envelope (base64): what a phone's QR reader can hand over as pasted text.</summary>
+    public static string ToTextCode(byte[] payload) => Convert.ToBase64String(payload);
+
+    /// <summary>
+    /// Receives a mon from text on the clipboard: the base64 (or hex) form of a PKF1 envelope, e.g. what a phone
+    /// reads out of a .pk QR code and sends over. No camera needed on this device.
+    /// </summary>
+    public static async Task<QrReceivedEntity?> PasteAsync(Grid host, ISaveEngine engine, string? contextNote = null)
+    {
+        string? text;
+        try { text = await Clipboard.Default.GetTextAsync(); }
+        catch (Exception) { text = null; }
+        var payload = TryDecodeText(text);
+        if (payload is null)
+        {
+            await PadMenu.ShowAsync(host, "Paste code",
+                "The clipboard has no .pk code. Copy the code text (base64) first, then try again.", "OK");
+            return null;
+        }
+        return await ReviewAsync(host, engine, payload, contextNote);
+    }
+
+    /// <summary>Base64 or hex text -> envelope bytes; null when it is neither or not a PKF1 envelope.</summary>
+    public static byte[]? TryDecodeText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var clean = new string([.. text.Where(c => !char.IsWhiteSpace(c))]);
+        byte[]? bytes = null;
+        try { bytes = Convert.FromBase64String(clean); } catch (FormatException) { }
+        if (bytes is null || QrEntityCodec.TryParse(bytes) is null)
+        {
+            try { bytes = Convert.FromHexString(clean.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? clean[2..] : clean); }
+            catch (FormatException) { bytes = null; }
+        }
+        return bytes is not null && QrEntityCodec.TryParse(bytes) is not null ? bytes : null;
+    }
+
+    private static async Task<QrReceivedEntity?> ReviewAsync(Grid host, ISaveEngine engine, byte[] payload, string? contextNote)
+    {
         var parsed = QrEntityCodec.TryParse(payload);
         if (parsed is null)
         {
