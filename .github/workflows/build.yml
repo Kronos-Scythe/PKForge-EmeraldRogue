@@ -44,7 +44,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.PKFORGE_ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.PKFORGE_ANDROID_KEY_PASSWORD }}
         run: |
-          configuration="Debug"
+          configuration="Release"
           signing_args=(-p:AndroidKeyStore=false)
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             configuration="Release"
