@@ -361,7 +361,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             "From a 3DS: copy /3ds/PKSM/banks/ (or /3ds/PKSM/dumps/) off the SD card to this device, then pick the files.",
             new PadOption("PKSM bank, dumps zip or .pk files", IconPath: "bank", Detail: "Files copied off your 3DS; you see a preview before anything is added."),
             new PadOption("Zip of .pk files", IconPath: "folder", Detail: "A .zip holding .pk files (any folders inside); exact copies are skipped."),
-            new PadOption("Folder of .pk files", IconPath: "folder", Detail: "Every .pk file in a folder joins the bank; exact copies are skipped."));
+            new PadOption("Folder of .pk files", IconPath: "folder", Detail: "Every .pk file in a folder and its subfolders joins the bank; exact copies are skipped."));
         if (format is null) return;
         if (format == "Zip of .pk files")
         {
@@ -384,7 +384,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var folder = await picker.PickFolderAsync();
         if (folder is null) return;
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Import from folder?",
-            $"Every recognized .pk file in {folder.DisplayName} joins the bank. Exact copies of mons already stored are skipped.",
+            $"Every recognized .pk file in {folder.DisplayName} and its subfolders joins the bank. Exact copies of mons already stored are skipped.",
             "Import");
         if (!confirmed) return;
 

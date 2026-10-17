@@ -48,12 +48,28 @@ public sealed class AndroidFolderFileAccess : IFolderFileAccess
     private static List<PickedDocument> ListFiles(string treeId)
     {
         var treeUri = Resolve(treeId);
-        return QueryChildren(treeUri)
-            .Select(child => new PickedDocument(
-                DocumentsContract.BuildDocumentUriUsingTree(treeUri, child.DocId)?.ToString()
-                    ?? throw new IOException($"The document {child.Name} could not be resolved."),
-                child.Name))
-            .ToList();
+        var rootDocId = DocumentsContract.GetTreeDocumentId(treeUri)
+            ?? throw new InvalidOperationException("The folder grant has no tree document id.");
+        var result = new List<PickedDocument>();
+        var pending = new Stack<(string DocId, int Depth)>();
+        pending.Push((rootDocId, 0));
+        while (pending.Count > 0 && result.Count < 20000)
+        {
+            var (parent, depth) = pending.Pop();
+            foreach (var child in QueryChildren(treeUri, parent, includeFolders: true))
+            {
+                if (child.IsFolder)
+                {
+                    if (depth < 8) pending.Push((child.DocId, depth + 1)); // subfolders count too
+                    continue;
+                }
+                result.Add(new PickedDocument(
+                    DocumentsContract.BuildDocumentUriUsingTree(treeUri, child.DocId)?.ToString()
+                        ?? throw new IOException($"The document {child.Name} could not be resolved."),
+                    child.Name));
+            }
+        }
+        return result;
     }
 
     /// <summary>The document URI of the exact-named file in the folder root, or null when absent.</summary>
@@ -75,11 +91,11 @@ public sealed class AndroidFolderFileAccess : IFolderFileAccess
             ?? throw new IOException($"The folder rejected a new file named {fileName}.");
     }
 
-    private sealed record Child(string DocId, string Name);
+    private sealed record Child(string DocId, string Name, bool IsFolder = false);
 
-    private static List<Child> QueryChildren(AndroidUri treeUri)
+    private static List<Child> QueryChildren(AndroidUri treeUri, string? parentDocId = null, bool includeFolders = false)
     {
-        var rootDocId = DocumentsContract.GetTreeDocumentId(treeUri)
+        var rootDocId = parentDocId ?? DocumentsContract.GetTreeDocumentId(treeUri)
             ?? throw new InvalidOperationException("The folder grant has no tree document id.");
         var childrenUri = DocumentsContract.BuildChildDocumentsUriUsingTree(treeUri, rootDocId);
         if (childrenUri is null) return [];
@@ -99,8 +115,9 @@ public sealed class AndroidFolderFileAccess : IFolderFileAccess
             var docId = cursor.GetString(0);
             var name = cursor.GetString(1);
             if (docId is null || name is null) continue;
-            if (cursor.GetString(2) == DocumentsContract.Document.MimeTypeDir) continue;
-            children.Add(new Child(docId, name));
+            var isFolder = cursor.GetString(2) == DocumentsContract.Document.MimeTypeDir;
+            if (isFolder && !includeFolders) continue;
+            children.Add(new Child(docId, name, isFolder));
         }
         return children;
     }

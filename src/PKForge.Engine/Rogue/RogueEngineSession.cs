@@ -801,12 +801,76 @@ internal sealed class RogueEngineSession : ISaveEngineSession
     }
 
     // ── features not available for this hack yet ──
-    public IReadOnlyList<int> GetMissingSpecies() => [];
-    public DexEntryState GetDexEntry(int species) => new(false, false);
-    public void SetDexEntry(int species, bool seen, bool caught) { }
-    public bool IsDexSpecies(int species) => species >= 1;
-    public DexProgress GetDexProgress() => new(0, 0, 1);
-    public void CompleteDex() => throw NotYet("The Emerald Rogue Pokédex editor");
+    // Pokédex: two parallel bit arrays in SaveBlock1, one bit per species id. Bit pair = state:
+    // 1 seen, 2 caught, 3 caught-shiny (flags1 = low bit, flags2 = high bit).
+    private const int DexFlags1Offset = 12176;
+    private const int DexFlags2Offset = 12373;
+    private const int DexFlagBytes = 197;
+
+    private static int DexSpecies(int national) => RogueData.SpeciesFromNational(national, 0);
+
+    private int DexState(int rogueSpecies)
+    {
+        if (rogueSpecies <= 0 || rogueSpecies >= DexFlagBytes * 8) return 0;
+        var index = rogueSpecies / 8; var mask = 1 << (rogueSpecies % 8);
+        return ((_sb1[DexFlags1Offset + index] & mask) != 0 ? 1 : 0) | ((_sb1[DexFlags2Offset + index] & mask) != 0 ? 2 : 0);
+    }
+
+    private void SetDexState(int rogueSpecies, int state)
+    {
+        if (rogueSpecies <= 0 || rogueSpecies >= DexFlagBytes * 8) return;
+        var index = rogueSpecies / 8; var mask = (byte)(1 << (rogueSpecies % 8));
+        _sb1[DexFlags1Offset + index] = (byte)((state & 1) != 0 ? _sb1[DexFlags1Offset + index] | mask : _sb1[DexFlags1Offset + index] & ~mask);
+        _sb1[DexFlags2Offset + index] = (byte)((state & 2) != 0 ? _sb1[DexFlags2Offset + index] | mask : _sb1[DexFlags2Offset + index] & ~mask);
+    }
+
+    public IReadOnlyList<int> GetMissingSpecies()
+    {
+        var owned = new HashSet<int>();
+        for (var box = 0; box < Boxes; box++)
+            for (var slot = 0; slot < SlotsPerBox; slot++)
+                if (TryMon(box, slot) is { LooksValid: true } mon) owned.Add(RogueData.NationalIdOf(mon.Species));
+        return [.. RogueData.BaseSpeciesIds.Select(RogueData.NationalIdOf).Distinct().Where(n => !owned.Contains(n)).OrderBy(n => n)];
+    }
+
+    public DexEntryState GetDexEntry(int species)
+    {
+        var state = DexState(DexSpecies(species));
+        return new(state >= 1, state >= 2);
+    }
+
+    public void SetDexEntry(int species, bool seen, bool caught)
+    {
+        var id = DexSpecies(species);
+        if (id <= 0) return;
+        var current = DexState(id);
+        var next = caught ? (current == 3 ? 3 : 2) : seen ? 1 : 0;
+        if (next == current) return;
+        SetDexState(id, next);
+        CommitSb1();
+    }
+
+    public bool IsDexSpecies(int species) => DexSpecies(species) > 0 && RogueData.NationalIdOf(DexSpecies(species)) == species;
+
+    public DexProgress GetDexProgress()
+    {
+        int seen = 0, caught = 0;
+        foreach (var id in RogueData.BaseSpeciesIds)
+        {
+            var state = DexState(id);
+            if (state >= 1) seen++;
+            if (state >= 2) caught++;
+        }
+        return new(seen, caught, RogueData.BaseSpeciesIds.Count);
+    }
+
+    public void CompleteDex()
+    {
+        foreach (var id in RogueData.BaseSpeciesIds)
+            SetDexState(id, DexState(id) == 3 ? 3 : 2);
+        CommitSb1();
+    }
+
     public IReadOnlyList<NuzlockeCatch> GetNuzlockeReport() => [];
 
     // Emerald Rogue's custom maps and encounter tables are not in the pinned Core's

@@ -97,6 +97,10 @@ internal static class RogueData
     // ── species ──
     public static bool IsKnownSpecies(int id) => SpeciesById.TryGetValue(id, out var s) && s.NatDex > 0;
     public static string SpeciesName(int id) => SpeciesById.TryGetValue(id, out var s) ? s.Name : $"#{id}";
+    /// <summary>One Rogue species id per national dex number (the base form), for dex counting.</summary>
+    public static IReadOnlyList<int> BaseSpeciesIds { get; } =
+        [.. SpeciesById.Values.Where(s => s.NatDex > 0 && s.Form == 0).GroupBy(s => s.NatDex).Select(g => g.Min(s => s.Id)).OrderBy(id => id)];
+
     public static int NationalIdOf(int id) => SpeciesById.TryGetValue(id, out var s) ? s.NatDex : 0;
     public static int FormOf(int id) => SpeciesById.TryGetValue(id, out var s) ? s.Form : 0;
 

@@ -168,6 +168,24 @@ public sealed class RogueSessionTests
     }
 
     [Fact]
+    public void Pokedex_reads_edits_and_completes_on_the_real_save()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var before = session.GetDexProgress();
+        Assert.True(before.Total > 100);
+        Assert.True(before.Seen > 0 && before.Caught <= before.Seen);
+        var target = Enumerable.Range(1, 900).First(n => session.IsDexSpecies(n) && !session.GetDexEntry(n).Caught);
+        session.SetDexEntry(target, seen: true, caught: true);
+        Assert.True(session.GetDexEntry(target).Caught);
+        session.SetDexEntry(target, seen: false, caught: false);
+        Assert.False(session.GetDexEntry(target).Seen);
+        session.CompleteDex();
+        var after = session.GetDexProgress();
+        Assert.Equal(after.Total, after.Caught);
+    }
+
+    [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {
         if (Sample() is not { } bytes) return;
