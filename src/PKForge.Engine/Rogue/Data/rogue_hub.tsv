@@ -1,0 +1,60 @@
+# kind	id	name	cost	targetArea
+area	0	Town Square	0	-1
+area	1	Town Exit	0	-1
+area	2	Labs	0	-1
+area	3	Safari Area	0	-1
+area	4	Challenge Area	0	-1
+area	5	Berry Fields	10	-1
+area	6	Home Base	15	-1
+area	7	Poké Marts	25	-1
+area	8	Park	15	-1
+area	9	Day Care	30	-1
+area	10	Market	25	-1
+upgrade	0	Trainer School	0	0
+upgrade	1	Move Tutor	5	0
+upgrade	2	Starter Bag	3	1
+upgrade	3	Adventure Flag	3	1
+upgrade	4	Unique Lab	0	2
+upgrade	5	Unique{PKMN} Slots	5	2
+upgrade	6	Unique{PKMN} Slots+	7	2
+upgrade	7	Rare Unique{PKMN}	3	2
+upgrade	8	Epic Unique{PKMN}	5	2
+upgrade	9	Exotic Unique{PKMN}	7	2
+upgrade	10	HUB_UPGRADE_LAB_UNIQUE_MON_RARITY_LEGENDARY	0	-1
+upgrade	11	Interior Base	3	6
+upgrade	12	Upper Floor	0	6
+upgrade	13	Town Style	3	6
+upgrade	14	Potion Cauldron	3	5
+upgrade	15	PotionCauldron+	0	6
+upgrade	16	Berry Field+	3	5
+upgrade	17	Berry Field++	5	5
+upgrade	18	Berry Field+++	7	5
+upgrade	19	Berry Yield+	3	5
+upgrade	20	Berry Yield++	5	5
+upgrade	21	Berry Yield+++	7	5
+upgrade	22	Legend Cave	0	3
+upgrade	23	General Stock	3	7
+upgrade	24	PokéBall Shop	3	7
+upgrade	25	PokéBall Stock	7	7
+upgrade	26	TM Shop	3	7
+upgrade	27	TM Stock	7	7
+upgrade	28	Battle Shop	3	7
+upgrade	29	Held Items Shop	7	7
+upgrade	30	DayCare Slots+	7	9
+upgrade	31	DayCare Slots++	9	9
+upgrade	32	{PKMN} Breeder	5	9
+upgrade	33	{PKMN} Breeder+	12	9
+upgrade	34	{PKMN} Breeder++	0	9
+upgrade	35	Pokégear	7	9
+upgrade	36	Tea Room	3	9
+upgrade	37	Day Care Exp	5	9
+upgrade	38	Day Care Exp+	9	9
+upgrade	39	Day Care Exp++	12	9
+upgrade	40	{POKEBLOCK} Blender+	3	10
+upgrade	41	Bakery	7	10
+upgrade	42	Treat Shop	3	10
+upgrade	43	{POKEBLOCK} Shop	5	10
+upgrade	44	Bank	3	10
+upgrade	45	Pokégear+	9	9
+upgrade	46	Pokégear++	12	9
+upgrade	47	Unique{PKMN} Types	0	2

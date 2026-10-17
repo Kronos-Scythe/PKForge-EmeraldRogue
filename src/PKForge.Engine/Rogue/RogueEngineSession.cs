@@ -735,6 +735,58 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         return items.FirstOrDefault(item => item.Id == itemId) is { } found ? found.Count : 0;
     }
 
+
+    // ── hub buildings and upgrades (cost Build Parts) ──
+    public IReadOnlyList<HubPart>? GetHubParts()
+    {
+        if (RogueHub.Locate(_storage) is not { } layout) return null;
+        return [.. RogueHub.Parts.Select(p => new HubPart(p.IsArea, p.Id, p.Name, p.Cost, p.Target,
+            RogueHub.Get(_storage, p.IsArea ? layout.AreaFlags : layout.UpgradeFlags, p.Id)))];
+    }
+
+    /// <summary>Builds or removes a hub area. A newly built area is placed on a free grid cell next to a built one.</summary>
+    public GenerationOutcome SetHubArea(int area, bool built)
+    {
+        if (RogueHub.Locate(_storage) is not { } layout || (uint)area >= (uint)layout.AreaCount)
+            return new GenerationOutcome(false, "This save's hub data could not be located.");
+        if (RogueHub.Get(_storage, layout.AreaFlags, area) == built) return new GenerationOutcome(true, "No change.");
+        var coordsAt = layout.Coords + area * layout.CoordSize;
+        if (built)
+        {
+            var taken = new HashSet<(int, int)>();
+            for (var other = 0; other < layout.AreaCount; other++)
+                if (RogueHub.Get(_storage, layout.AreaFlags, other))
+                    taken.Add(((sbyte)_storage[layout.Coords + other * layout.CoordSize], (sbyte)_storage[layout.Coords + other * layout.CoordSize + 1]));
+            (int, int)? spot = null;
+            foreach (var (x, y) in taken.OrderBy(c => Math.Abs(c.Item1) + Math.Abs(c.Item2)).ThenBy(c => c.Item1).ThenBy(c => c.Item2))
+            {
+                foreach (var (dx, dy) in new[] { (0, -1), (-1, 0), (1, 0), (0, 1) })
+                    if (!taken.Contains((x + dx, y + dy))) { spot = (x + dx, y + dy); break; }
+                if (spot is not null) break;
+            }
+            if (spot is not { } cell) return new GenerationOutcome(false, "No free hub cell was found.");
+            _storage[coordsAt] = (byte)(sbyte)cell.Item1;
+            _storage[coordsAt + 1] = (byte)(sbyte)cell.Item2;
+        }
+        else
+        {
+            _storage[coordsAt] = 0;
+            _storage[coordsAt + 1] = 0;
+        }
+        RogueHub.Set(_storage, layout.AreaFlags, area, built);
+        CommitStorage();
+        return new GenerationOutcome(true, built ? "Area built." : "Area removed.");
+    }
+
+    public GenerationOutcome SetHubUpgrade(int upgrade, bool bought)
+    {
+        if (RogueHub.Locate(_storage) is not { } layout || (uint)upgrade >= (uint)layout.UpgradeCount)
+            return new GenerationOutcome(false, "This save's hub data could not be located.");
+        RogueHub.Set(_storage, layout.UpgradeFlags, upgrade, bought);
+        CommitStorage();
+        return new GenerationOutcome(true, bought ? "Upgrade unlocked." : "Upgrade removed.");
+    }
+
     // ── potential / moves ──
     public PotentialInfo GetPotential(int box, int slot)
     {

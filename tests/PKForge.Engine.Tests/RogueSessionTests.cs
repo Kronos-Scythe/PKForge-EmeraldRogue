@@ -241,6 +241,28 @@ public sealed class RogueSessionTests
     }
 
     [Fact]
+    public void Hub_buildings_and_upgrades_read_and_edit_on_the_real_save()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = (PKForge.Engine.Rogue.RogueEngineSession)Engine.OpenSession(bytes, "Rogue");
+        var parts = session.GetHubParts()!;
+        Assert.NotNull(parts);
+        Assert.Equal(11, parts.Count(p => p.IsArea));
+        Assert.Equal(48, parts.Count(p => !p.IsArea));
+        var berry = parts.Single(p => p.IsArea && p.Name == "Berry Fields");
+        Assert.Equal(10, berry.Cost);
+        Assert.False(berry.Built);
+        Assert.True(session.SetHubArea(berry.Id, true).Success);
+        Assert.True(session.GetHubParts()!.Single(p => p.IsArea && p.Id == berry.Id).Built);
+        Assert.True(session.SetHubUpgrade(16, true).Success);
+        Assert.True(session.GetHubParts()!.Single(p => !p.IsArea && p.Id == 16).Built);
+        var reopened = (PKForge.Engine.Rogue.RogueEngineSession)Engine.OpenSession(session.Serialize(), "Rogue");
+        Assert.True(reopened.GetHubParts()!.Single(p => p.IsArea && p.Id == berry.Id).Built);
+        Assert.True(reopened.SetHubArea(berry.Id, false).Success);
+        Assert.False(reopened.GetHubParts()!.Single(p => p.IsArea && p.Id == berry.Id).Built);
+    }
+
+    [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {
         if (Sample() is not { } bytes) return;

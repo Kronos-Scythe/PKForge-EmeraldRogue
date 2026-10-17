@@ -174,6 +174,9 @@ public static class EventFlagService
         }).ToList();
     }
 
+    private const int HubAreaBase = 100_000;
+    private const int HubUpgradeBase = 101_000;
+
     private static EventCatalog LoadRogue(Rogue.RogueEngineSession rogue)
     {
         var flags = new List<EventEntry>(Rogue.RogueEvents.FlagCount);
@@ -184,6 +187,17 @@ public static class EventFlagService
             flags.Add(new EventEntry(EventEntryKind.Flag, EventFlagBank.Event, id, id.ToString(CultureInfo.InvariantCulture), label, category,
                 rogue.GetFlag(id) ? 1 : 0, rogue.GetFlag(id, asOpened: true) ? 1 : 0, 0, 1, false, []));
         }
+        // Hub buildings and upgrades ride along as flags with high indexes (they cost Build Parts in game).
+        if (rogue.GetHubParts() is { } hub)
+            foreach (var part in hub)
+            {
+                var index = (part.IsArea ? HubAreaBase : HubUpgradeBase) + part.Id;
+                var cost = part.Cost > 0 ? $" ({part.Cost} Build Parts)" : "";
+                var needs = !part.IsArea && part.TargetArea >= 0 ? $" – needs {hub.First(p => p.IsArea && p.Id == part.TargetArea).Name}" : "";
+                flags.Add(new EventEntry(EventEntryKind.Flag, EventFlagBank.Event, index, part.IsArea ? $"area {part.Id}" : $"upgrade {part.Id}",
+                    part.Name + cost + needs, part.IsArea ? "Hub: Buildings" : "Hub: Upgrades",
+                    part.Built ? 1 : 0, part.Built ? 1 : 0, 0, 1, false, []));
+            }
         var work = new List<EventEntry>(Rogue.RogueEvents.VarCount);
         for (var index = 0; index < Rogue.RogueEvents.VarCount; index++)
         {
@@ -199,6 +213,8 @@ public static class EventFlagService
     {
         if (session is Rogue.RogueEngineSession rogue)
         {
+            if (index >= HubUpgradeBase) return rogue.SetHubUpgrade(index - HubUpgradeBase, value);
+            if (index >= HubAreaBase) return rogue.SetHubArea(index - HubAreaBase, value);
             if ((uint)index >= Rogue.RogueEvents.FlagCount) return new GenerationOutcome(false, $"No flag {index} in this save.");
             rogue.SetFlag(index, value);
             return new GenerationOutcome(true, $"Flag {index}{(Rogue.RogueEvents.FlagNames.TryGetValue(index, out var name) ? $" {name}" : "")} {(value ? "set" : "cleared")}");
