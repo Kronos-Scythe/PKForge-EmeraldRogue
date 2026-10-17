@@ -280,9 +280,9 @@ public sealed class RogueSessionTests
         """;
         var all = SmogonSets.Find(json, "garchomp");
         Assert.Equal(2, all.Count);
-        Assert.Equal(1, SmogonSets.Find(json, "Garchomp", doubles: true).Count);
-        Assert.Equal(1, SmogonSets.Find(json, "Garchomp", doubles: false).Count);
-        Assert.Equal(0, SmogonSets.Find(json, "Pikachu").Count);
+        Assert.Single(SmogonSets.Find(json, "Garchomp", doubles: true));
+        Assert.Single(SmogonSets.Find(json, "Garchomp", doubles: false));
+        Assert.Empty(SmogonSets.Find(json, "Pikachu"));
         Assert.Equal("Doubles OU", SmogonSets.FormatLabel("gen9doublesou"));
         var singles = SmogonSets.Find(json, "Garchomp", doubles: false)[0];
         Assert.True(singles.Showdown.Contains("Garchomp @ Rocky Helmet") && singles.Showdown.Contains("EVs: 4 HP / 252 Atk / 252 Spe"));
