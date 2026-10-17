@@ -237,4 +237,86 @@ public sealed class RogueSessionTests
         EventFlagService.SetWork(session, 5, catalog.Work[5].Original);
         Assert.True(session.Serialize().Span.SequenceEqual(bytes));
     }
+
+    [Fact]
+    public void Zip_import_finds_rogue_files_in_nested_folders_and_skips_duplicates()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var export = session.ExportSlot(-1, 1);
+        using var zipStream = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(zipStream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var name in new[] { "team/box1/Scizor.pk3ex", "readme.txt" })
+            {
+                var entry = zip.CreateEntry(name);
+                using var writer = entry.Open();
+                writer.Write(name.EndsWith(".txt") ? "hello"u8 : export.Data);
+            }
+        }
+        var directory = Path.Combine(Path.GetTempPath(), "pkforge-zip-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var bank = new PKForge.Infrastructure.FileBankService(directory);
+            (BankEntryInfo? Info, bool _) Describe(byte[] data, string name) => (Engine.TryDescribeEntity(data, name, name), true);
+            var first = PKForge.Infrastructure.BankArchive.ImportZip(bank, (d, n) => Describe(d, n).Info, zipStream.ToArray());
+            Assert.Equal(1, first.Imported);
+            var second = PKForge.Infrastructure.BankArchive.ImportZip(bank, (d, n) => Describe(d, n).Info, zipStream.ToArray());
+            Assert.Equal(0, second.Imported);
+            Assert.Equal(1, second.SkippedDuplicates);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public void Smogon_set_json_becomes_a_rogue_mon_with_item_ability_and_evs()
+    {
+        if (Sample() is not { } bytes) return;
+        const string json = """
+        {"gen9ou":{"Garchomp":{"Swords Dance":{"moves":["Swords Dance","Earthquake",["Scale Shot","Outrage"],"Stone Edge"],"ability":"Rough Skin","item":"Rocky Helmet","nature":"Jolly","evs":{"hp":4,"atk":252,"spe":252},"teratypes":["Ground"]}}},
+         "gen9doublesou":{"Garchomp":{"Doubles":{"moves":["Protect","Dragon Claw"],"ability":["Rough Skin"],"item":"Life Orb","nature":"Adamant","evs":{"atk":252,"spe":252,"hp":4}}}},
+         "gen9ou2":{"Other":{"X":{"moves":["Tackle"]}}}}
+        """;
+        var all = SmogonSets.Find(json, "garchomp");
+        Assert.Equal(2, all.Count);
+        Assert.Equal(1, SmogonSets.Find(json, "Garchomp", doubles: true).Count);
+        Assert.Equal(1, SmogonSets.Find(json, "Garchomp", doubles: false).Count);
+        Assert.Equal(0, SmogonSets.Find(json, "Pikachu").Count);
+        Assert.Equal("Doubles OU", SmogonSets.FormatLabel("gen9doublesou"));
+        var singles = SmogonSets.Find(json, "Garchomp", doubles: false)[0];
+        Assert.True(singles.Showdown.Contains("Garchomp @ Rocky Helmet") && singles.Showdown.Contains("EVs: 4 HP / 252 Atk / 252 Spe"));
+
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var slot = Enumerable.Range(0, 30).First(sl => session.ReadEntity(9, sl).IsEmpty);
+        var outcome = ((ISaveEngineSession)session).GetType() == session.GetType()
+            ? new LegalizerService().GenerateFromShowdown(session, 9, slot, singles.Showdown)
+            : throw new Exception("unreachable");
+        Assert.True(outcome.Success);
+        var mon = session.ReadEntity(9, slot);
+        Assert.Equal(445, mon.Species);
+        Assert.Equal(252, mon.EVs[1]);
+        Assert.Equal(252, mon.EVs[5]);
+        Assert.True(mon.HeldItem > 0 && session.GetItemNames()[mon.HeldItem] == "Rocky Helmet");
+        Assert.True(new[] { mon.Move1, mon.Move2, mon.Move3, mon.Move4 }.Contains(14)); // Swords Dance
+    }
+
+    [Fact]
+    public void Profile_edits_gender_and_play_time_round_trip()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var trainer = session.GetTrainer();
+        var stats = session.GetTrainerStats();
+        Assert.True(stats.SupportsPlayTime);
+        session.SetTrainer(trainer with { Gender = trainer.Gender == 1 ? 0 : 1, TID = 4321 });
+        session.SetTrainerStats(new TrainerStatsEdit(PlayTimeHours: 123, PlayTimeMinutes: 45));
+        var candidate = session.Serialize().ToArray();
+        Assert.True(Engine.Validate(candidate));
+        using var reopened = Engine.OpenSession(candidate, "Rogue");
+        Assert.Equal(trainer.Gender == 1 ? 0 : 1, reopened.GetTrainer().Gender);
+        Assert.Equal(4321, reopened.GetTrainer().TID);
+        Assert.Equal(123, reopened.GetTrainerStats().PlayTimeHours);
+        Assert.Equal(45, reopened.GetTrainerStats().PlayTimeMinutes);
+    }
 }

@@ -429,10 +429,10 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         if (set.Species == 0)
             return new GenerationOutcome(false, "Could not read the set (no species).");
         int? nature = set.Nature is Nature.Random ? null : (int)set.Nature;
-        return Generate(box, slot, set.Species, set.Level, set.Shiny, nature, null, [.. set.Moves.Select(move => (int)move)]);
+        return Generate(box, slot, set.Species, set.Level, set.Shiny, nature, null, [.. set.Moves.Select(move => (int)move)], set);
     }
 
-    private GenerationOutcome Generate(int box, int slot, int nationalSpecies, int? level, bool shiny, int? nature, int? ball, int[] nationalMoves)
+    private GenerationOutcome Generate(int box, int slot, int nationalSpecies, int? level, bool shiny, int? nature, int? ball, int[] nationalMoves, ShowdownSet? set = null)
     {
         var species = RogueData.SpeciesFromNational(nationalSpecies);
         if (species <= 0)
@@ -475,6 +475,19 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         mon.IsShiny = shiny;
         if (nature is { } wantedNature and >= 0 and < 25)
             mon.Nature = wantedNature;
+        if (set is not null)
+        {
+            // A Showdown/Smogon set also names the item, ability, EVs and IVs; PKHeX lists stats HP/Atk/Def/Spe/SpA/SpD.
+            if (set.HeldItem > 0 && RogueData.ItemFromNational(set.HeldItem) is > 0 and var romItem)
+                mon.HeldItem = romItem;
+            if (set.Ability > 0 && RogueData.AbilityFromNational(set.Ability) is > 0 and var romAbility)
+                SetAbility(mon, romAbility);
+            static int[] ToAppOrder(IReadOnlyList<int> values) => [values[0], values[1], values[2], values[4], values[5], values[3]];
+            if (set.EVs is { Length: 6 } evs && evs.Sum() > 0)
+                mon.EVs = [.. ToAppOrder(evs).Select(v => Math.Clamp(v, 0, 255))];
+            if (set.IVs is { Length: 6 } ivs)
+                mon.IVs = [.. ToAppOrder(ivs).Select(v => Math.Clamp(v, 0, 31))];
+        }
         if (party)
         {
             mon.SetPartyLevelAndStats(Math.Clamp(level ?? 5, 1, 100), fullHeal: true);
@@ -613,7 +626,7 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         var key = BinaryPrimitives.ReadUInt32LittleEndian(_sb2.AsSpan(EncryptionKeyOffset));
         var money = BinaryPrimitives.ReadUInt32LittleEndian(_sb1.AsSpan(MoneyOffset)) ^ key;
         return new TrainerInfo(TrainerName, BinaryPrimitives.ReadUInt16LittleEndian(_sb2.AsSpan(10)),
-            BinaryPrimitives.ReadUInt16LittleEndian(_sb2.AsSpan(12)), money, 0);
+            BinaryPrimitives.ReadUInt16LittleEndian(_sb2.AsSpan(12)), money, _sb2[8] == 1 ? 1 : 0);
     }
 
     public void SetTrainer(TrainerInfo trainer)
@@ -622,6 +635,7 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         BinaryPrimitives.WriteUInt32LittleEndian(_sb1.AsSpan(MoneyOffset), Math.Min(trainer.Money, 999_999u) ^ key);
         BinaryPrimitives.WriteUInt16LittleEndian(_sb2.AsSpan(10), (ushort)trainer.TID);
         BinaryPrimitives.WriteUInt16LittleEndian(_sb2.AsSpan(12), (ushort)trainer.SID);
+        if (trainer.Gender is 0 or 1) _sb2[8] = (byte)trainer.Gender; // playerGender: 0 male, 1 female
         if (trainer.Name.Length > 0 && trainer.Name != TrainerName)
         {
             var span = _sb2.AsSpan(0, 8);
@@ -1007,8 +1021,20 @@ internal sealed class RogueEngineSession : ISaveEngineSession
     public void SetStylePoints(int value) { }
     public MysteryGiftInbox GetMysteryGiftInbox() => new(false, []);
     public TrainerRecordsInfo GetTrainerRecords() => new(false, []);
-    public TrainerStats GetTrainerStats() => new(false, 0, 0, 0, false, 0, 0, false, 0, 0);
-    public void SetTrainerStats(TrainerStatsEdit edit) => throw NotYet("Emerald Rogue trainer statistics");
+    private const int PlayTimeHoursMax = 999; // the game stops counting at 999:59
+    public TrainerStats GetTrainerStats() => new(true,
+        BinaryPrimitives.ReadUInt16LittleEndian(_sb2.AsSpan(14)), _sb2[16], PlayTimeHoursMax,
+        false, 0, 0, false, 0, 0);
+
+    public void SetTrainerStats(TrainerStatsEdit edit)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (edit.PlayTimeHours is { } hours)
+            BinaryPrimitives.WriteUInt16LittleEndian(_sb2.AsSpan(14), (ushort)Math.Clamp(hours, 0, PlayTimeHoursMax));
+        if (edit.PlayTimeMinutes is { } minutes)
+            _sb2[16] = (byte)Math.Clamp(minutes, 0, 59);
+        CommitSb2();
+    }
     public bool SupportsRTCRepair => false;
     public void RepairRTC() { }
 

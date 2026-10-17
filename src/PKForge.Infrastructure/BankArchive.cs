@@ -119,6 +119,62 @@ public static class BankArchive
         return new BankArchiveImportResult(deposits.Count, skipped, rejected);
     }
 
+    /// <summary>
+    /// Imports every recognizable .pk file inside a zip (any folder depth) in one bank write.
+    /// Entries that are not Pokémon files are ignored, exact copies already stored are skipped,
+    /// and a file that looks like a .pk but does not parse counts as rejected.
+    /// </summary>
+    public static BankArchiveImportResult ImportZip(
+        IBankService bank,
+        Func<byte[], string, BankEntryInfo?> describe,
+        ReadOnlyMemory<byte> zipBytes,
+        Action<int, int>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        const int MaxEntryBytes = 64 * 1024; // the largest entity file is a few hundred bytes
+        using var stream = new MemoryStream(zipBytes.ToArray(), writable: false);
+        using var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Read);
+        var candidates = zip.Entries
+            .Where(e => e.Name.Length > 0 && e.Length is > 0 and <= MaxEntryBytes && IsPkFileName(e.Name))
+            .ToArray();
+        var known = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in bank.GetAll())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            known.Add(Sha256Hex(bank.GetData(entry.Id)));
+        }
+
+        var deposits = new List<BankDeposit>();
+        var skipped = 0;
+        var rejected = 0;
+        for (var i = 0; i < candidates.Length; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Invoke(i, candidates.Length);
+            byte[] bytes;
+            using (var entryStream = candidates[i].Open())
+            using (var copy = new MemoryStream())
+            {
+                entryStream.CopyTo(copy);
+                bytes = copy.ToArray();
+            }
+            if (describe(bytes, candidates[i].Name) is not { } info)
+            {
+                rejected++;
+                continue;
+            }
+            if (!known.Add(Sha256Hex(bytes)))
+            {
+                skipped++;
+                continue;
+            }
+            deposits.Add(new BankDeposit(bytes, info));
+        }
+        progress?.Invoke(candidates.Length, candidates.Length);
+        bank.AddMany(deposits);
+        return new BankArchiveImportResult(deposits.Count, skipped, rejected);
+    }
+
     /// <summary>File name for one entry: "025 - Sparky a1b2c3d4.pk7". The short id keeps
     /// clones and same-named siblings distinct; the generation picks the .pkN extension.</summary>
     public static string FileNameFor(BankEntry entry)
@@ -141,7 +197,7 @@ public static class BankArchive
         return extension is ".pk" or ".pk1" or ".pk2" or ".pk3" or ".pk4"
             or ".pk5" or ".pk6" or ".pk7" or ".pk8" or ".pk9"
             or ".pb7" or ".pb8" or ".pa8" or ".pa9" or ".sk2" or ".ck3" or ".xk3" or ".bk4" or ".rk4"
-            or ".pk3rr" or ".pk3ub" or ".pk3gsc";
+            or ".pk3rr" or ".pk3ub" or ".pk3gsc" or ".pk3ex";
     }
 
     /// <summary>Strips filesystem-hostile characters (SAF display names reject them too) and caps length.</summary>

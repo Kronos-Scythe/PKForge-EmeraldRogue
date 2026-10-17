@@ -641,6 +641,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         options.AddRange(Menu(
             Allowed(SaveAction.CreateMon, new("Import .pk files", IconPath: "import", Detail: "Pick Pokémon files to fill this box's empty slots.")),
             Allowed(SaveAction.CreateMon, new("Import Showdown team", IconPath: "script", Detail: "Paste Showdown sets, see their legality, then place them in empty slots.")),
+            Allowed(SaveAction.CreateMon, new("Smogon sets (online)", IconPath: "script", Detail: "Download the popular Smogon sets for a Pokémon (singles or doubles) and place one.")),
             new("Export box to Showdown", IconPath: "script", Detail: "This box as Showdown text to copy or share."),
             Allowed(SaveAction.CreateMon, new("Generate Living Dex", IconPath: "create", Detail: "Replaces every box with one legal Pokémon of each species.")),
             new("How to get a Pokémon…", IconPath: "map", Detail: "How to obtain a species in the game you are editing."),
@@ -676,6 +677,12 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             case "Import .pk files":
                 await BulkImportAsync();
                 return;
+            case "Smogon sets (online)":
+            {
+                var smogon = await SmogonSetService.PickAsync(_hostGrid);
+                if (smogon is not null) await ImportShowdownPreviewedAsync("Smogon set", smogon);
+                break;
+            }
             case "Import Showdown team":
                 await ImportShowdownTeamAsync();
                 return;

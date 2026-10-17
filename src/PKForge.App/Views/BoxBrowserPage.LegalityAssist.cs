@@ -142,13 +142,13 @@ public sealed partial class BoxBrowserPage
     /// Paste many sets, see each one's legality after an offline dry run, choose which to
     /// keep and where they go, then place them all in one backed-up write.
     /// </summary>
-    private async Task ImportShowdownPreviewedAsync(string title)
+    private async Task ImportShowdownPreviewedAsync(string title, string? presetText = null)
     {
         if (Denied(SaveAction.CreateMon)) return;
         var session = _sessionsFor();
         var legalizer = IPlatformApplication.Current?.Services.GetService<ILegalizerService>();
         if (session is null || legalizer is null) return;
-        var text = await TextPopup.ShowAsync(_hostGrid, title,
+        var text = presetText ?? await TextPopup.ShowAsync(_hostGrid, title,
             "Paste a whole team or box: one Showdown set per Pokémon, a blank line between sets.");
         if (string.IsNullOrWhiteSpace(text)) return;
 

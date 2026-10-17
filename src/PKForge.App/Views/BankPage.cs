@@ -360,8 +360,14 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var format = await PadMenu.ShowAsync(_hostGrid, "Import",
             "From a 3DS: copy /3ds/PKSM/banks/ (or /3ds/PKSM/dumps/) off the SD card to this device, then pick the files.",
             new PadOption("PKSM bank, dumps zip or .pk files", IconPath: "bank", Detail: "Files copied off your 3DS; you see a preview before anything is added."),
+            new PadOption("Zip of .pk files", IconPath: "folder", Detail: "A .zip holding .pk files (any folders inside); exact copies are skipped."),
             new PadOption("Folder of .pk files", IconPath: "folder", Detail: "Every .pk file in a folder joins the bank; exact copies are skipped."));
         if (format is null) return;
+        if (format == "Zip of .pk files")
+        {
+            await ImportZipAsync();
+            return;
+        }
         if (format.StartsWith("PKSM", StringComparison.Ordinal))
         {
             await ImportPksmAsync();
@@ -410,6 +416,55 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         }
     }
 
+
+    /// <summary>Imports the .pk files inside picked .zip archives in one go (no folder grant needed).</summary>
+    private async Task ImportZipAsync()
+    {
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<IDocumentPicker>();
+        var access = services?.GetService<ISaveFileAccess>();
+        var engine = services?.GetService<ISaveEngine>();
+        if (picker is null || access is null || engine is null) return;
+        if (await DeniedAsync(SaveAction.CreateMon)) return;
+        var documents = await picker.PickManyAsync();
+        if (documents.Count == 0) return;
+
+        var overlay = LoadingOverlay.Show(_hostGrid, "Reading the zip…", "Looking for .pk files.");
+        try
+        {
+            var imported = 0; var skipped = 0; var rejected = 0;
+            foreach (var document in documents)
+            {
+                var bytes = await access.ReadAsync(document.DocumentId);
+                var result = await Task.Run(() => BankArchive.ImportZip(_bank,
+                    (data, name) => engine.TryDescribeEntity(data, name, name),
+                    bytes, (done, total) => overlay.Report(done, total), overlay.Cancellation.Token));
+                imported += result.Imported; skipped += result.SkippedDuplicates; rejected += result.Rejected;
+            }
+            _boxViewModel.Status = imported == 0 && skipped == 0
+                ? "No recognizable Pokémon in that zip."
+                : $"{imported} imported · {skipped} duplicate(s) skipped" + (rejected > 0 ? $" · {rejected} unreadable" : "") + ".";
+        }
+        catch (OperationCanceledException)
+        {
+            _boxViewModel.Status = "Import cancelled.";
+        }
+        catch (Exception error) when (error is InvalidDataException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _boxViewModel.Status = $"Import failed: {error.Message}";
+        }
+        finally
+        {
+            overlay.Close();
+            RefreshBoxEntries();
+            UpdatePageLabel();
+            UpdatePreview();
+            _canvas.InvalidateSurface();
+        }
+    }
+
+    /// <summary>Showdown text already chosen (a Smogon set) for the paste flow to use instead of asking.</summary>
+    private string? _presetShowdown;
 
     private void UpdatePageLabel()
     {
@@ -1431,12 +1486,13 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, "Add to bank", null,
             new PadOption("Create a Pokémon", IconPath: "create", Detail: "Build a legal Pokémon step by step."),
             new PadOption("Paste a Showdown set", IconPath: "script", Detail: "Turns a Pokémon Showdown text set into a Pokémon."),
+            new PadOption("Smogon set (online)", IconPath: "script", Detail: "Download a popular Smogon set (singles or doubles) for a Pokémon."),
             new PadOption("Import .pk file", IconPath: "import", Detail: "Adds Pokémon from .pk files you pick."),
             new PadOption("Scan a .pk QR", IconPath: "scan", Detail: "Pick a picture of a .pk QR code to add its Pokémon."),
             new PadOption("Paste a .pk code", IconPath: "scan", Detail: "Add a Pokémon from code text copied to the clipboard (no camera needed)."));
         switch (choice)
         {
-            case "Create a Pokémon" or "Paste a Showdown set" when session is null:
+            case "Create a Pokémon" or "Paste a Showdown set" or "Smogon set (online)" when session is null:
             {
                 // No game connected: pick the format, generate against a blank save with
                 // a placeholder identity (OT "PKForge", editable afterwards in the editor).
@@ -1450,6 +1506,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 var engine = IPlatformApplication.Current!.Services.GetRequiredService<ISaveEngine>();
                 session = engine.OpenBlankSession(generation);
                 if (choice == "Create a Pokémon") goto case "Create a Pokémon";
+                if (choice == "Smogon set (online)") goto case "Smogon set (online)";
                 goto case "Paste a Showdown set";
             }
             case "Create a Pokémon":
@@ -1469,9 +1526,16 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 finally { overlay.Close(); }
                 return;
             }
+            case "Smogon set (online)":
+            {
+                _presetShowdown = await Services.SmogonSetService.PickAsync(_hostGrid);
+                if (_presetShowdown is null) return;
+                goto case "Paste a Showdown set";
+            }
             case "Paste a Showdown set":
             {
-                var text = await TextPopup.ShowAsync(_hostGrid, "Paste a Showdown set", "The set becomes a legal mon stored in the bank.");
+                var text = _presetShowdown ?? await TextPopup.ShowAsync(_hostGrid, "Paste a Showdown set", "The set becomes a legal mon stored in the bank.");
+                _presetShowdown = null;
                 if (string.IsNullOrWhiteSpace(text)) return;
                 var legalizer = IPlatformApplication.Current!.Services.GetRequiredService<ILegalizerService>();
                 var overlay = LoadingOverlay.Show(_hostGrid, "Reading the set…", "The offline legalizer is at work.");
