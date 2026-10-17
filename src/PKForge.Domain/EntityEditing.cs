@@ -145,6 +145,13 @@ public interface ISaveEngineSession : IDisposable
     /// Fixed-OT encounters are refused and the edit is committed only when it remains legal.</summary>
     GenerationOutcome MakeMine(int box, int slot, TrainerProfile? profile = null);
 
+    /// <summary>Replaces the Pokémon in a slot with a Showdown/Smogon set, in place (same slot, level and shininess).
+    /// Games that cannot do this return a failed outcome and the caller imports the set as a new Pokémon instead.</summary>
+    bool SupportsInPlaceSets => false;
+
+    GenerationOutcome ApplyShowdownToSlot(int box, int slot, string showdownText) =>
+        new(false, "This game imports sets as new Pokémon.");
+
     // ── Trainer statistics: playtime and currency counters ──
     /// <summary>Playtime, Battle Points, and coins with per-field support flags and
     /// storage maxima; the UI only offers what the open format actually keeps.

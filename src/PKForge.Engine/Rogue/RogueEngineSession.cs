@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using PKForge.Domain;
+using System.Text;
+using System.Text.RegularExpressions;
 using PKHeX.Core;
 using static PKForge.Engine.Rogue.RogueFormat;
 
@@ -444,6 +446,27 @@ internal sealed class RogueEngineSession : ISaveEngineSession
     internal GenerationOutcome GenerateInto(int box, int slot, GenerationRequest request) =>
         Generate(box, slot, request.Species, request.Level, request.Shiny, request.Nature, request.Ball, [.. request.Moves ?? []]);
 
+    /// <summary>
+    /// Replaces the Pokémon in a slot with a set, in place: same slot, same level, same shininess; the species, item,
+    /// ability, EVs/IVs, nature and moves come from the set. Works for box slots and party slots.
+    /// </summary>
+    public bool SupportsInPlaceSets => true;
+
+    public GenerationOutcome ApplyShowdownToSlot(int box, int slot, string text)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var old = TryMon(box, slot);
+        if (old is null || !old.LooksValid) return new GenerationOutcome(false, "There is no Pokémon in that slot to replace.");
+        var level = old.Party ? RogueData.LevelForExperience(old.Experience) : RogueData.LevelForExperience(old.Experience);
+        var extra = new StringBuilder(text.TrimEnd());
+        if (!Regex.IsMatch(text, @"^\s*Level\s*:", RegexOptions.Multiline | RegexOptions.IgnoreCase)) extra.Append("\nLevel: ").Append(level);
+        if (old.IsShiny && !Regex.IsMatch(text, @"^\s*Shiny\s*:", RegexOptions.Multiline | RegexOptions.IgnoreCase)) extra.Append("\nShiny: Yes");
+        var set = new ShowdownSet(extra.ToString());
+        if (set.Species == 0) return new GenerationOutcome(false, "Could not read the set (no species).");
+        int? nature = set.Nature is Nature.Random ? null : (int)set.Nature;
+        return Generate(box, slot, set.Species, set.Level, set.Shiny, nature, null, [.. set.Moves.Select(move => (int)move)], set, replaceParty: box == -1);
+    }
+
     internal GenerationOutcome GenerateFromShowdownText(int box, int slot, string text)
     {
         var set = new ShowdownSet(text);
@@ -453,7 +476,7 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         return Generate(box, slot, set.Species, set.Level, set.Shiny, nature, null, [.. set.Moves.Select(move => (int)move)], set);
     }
 
-    private GenerationOutcome Generate(int box, int slot, int nationalSpecies, int? level, bool shiny, int? nature, int? ball, int[] nationalMoves, ShowdownSet? set = null)
+    private GenerationOutcome Generate(int box, int slot, int nationalSpecies, int? level, bool shiny, int? nature, int? ball, int[] nationalMoves, ShowdownSet? set = null, bool replaceParty = false)
     {
         var species = RogueData.SpeciesFromNational(nationalSpecies);
         if (species <= 0)
@@ -462,8 +485,16 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         var party = box == -1;
         if (party)
         {
-            if (PartyCount >= 6) return new GenerationOutcome(false, "The party is full.");
-            target = new RogueMon(_sb1, PartyOffset + PartyCount * RogueMon.PartySize, party: true);
+            if (replaceParty)
+            {
+                if ((uint)slot >= (uint)PartyCount) return new GenerationOutcome(false, "There is no Pokémon in that party slot.");
+                target = new RogueMon(_sb1, PartyOffset + slot * RogueMon.PartySize, party: true);
+            }
+            else
+            {
+                if (PartyCount >= 6) return new GenerationOutcome(false, "The party is full.");
+                target = new RogueMon(_sb1, PartyOffset + PartyCount * RogueMon.PartySize, party: true);
+            }
         }
         else
         {
@@ -512,7 +543,7 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         if (party)
         {
             mon.SetPartyLevelAndStats(Math.Clamp(level ?? 5, 1, 100), fullHeal: true);
-            SetPartyCount(PartyCount + 1);
+            if (!replaceParty) SetPartyCount(PartyCount + 1);
             CommitSb1();
         }
         else

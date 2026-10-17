@@ -278,6 +278,25 @@ public sealed class RogueSessionTests
     }
 
     [Fact]
+    public void Smogon_set_replaces_a_pokemon_in_place_keeping_level_and_slot()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        Assert.True(session.SupportsInPlaceSets);
+        var slot = Enumerable.Range(0, 30).First(i => !session.ReadEntity(0, i).IsEmpty);
+        var before = session.ReadEntity(0, slot);
+        var outcome = session.ApplyShowdownToSlot(0, slot, "Great Tusk @ Rocky Helmet\nAbility: Protosynthesis\nEVs: 252 Atk / 4 Def / 252 Spe\nJolly Nature\n- Rapid Spin\n- Headlong Rush");
+        Assert.True(outcome.Success);
+        var after = session.ReadEntity(0, slot);
+        Assert.Equal(984, after.Species);
+        Assert.Equal(before.Level, after.Level);
+        Assert.False(session.ReadEntity(0, slot).IsEmpty);
+        var party = session.ApplyShowdownToSlot(-1, 0, "Garchomp\nJolly Nature\n- Earthquake");
+        Assert.True(party.Success);
+        Assert.Equal(445, session.ReadEntity(-1, 0).Species);
+    }
+
+    [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {
         if (Sample() is not { } bytes) return;
