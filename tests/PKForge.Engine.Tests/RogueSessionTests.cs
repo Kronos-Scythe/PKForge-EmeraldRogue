@@ -205,6 +205,41 @@ public sealed class RogueSessionTests
         Assert.Null(SmogonSets.FromUsage(json, "Garchomp", "gen9ou"));
     }
 
+    private sealed class FakeFolder(Dictionary<string, byte[]> files) : PKForge.Domain.IFolderFileAccess
+    {
+        public ValueTask<IReadOnlyList<PKForge.Domain.PickedDocument>> ListFilesAsync(string treeId, CancellationToken cancellationToken = default) =>
+            new((IReadOnlyList<PKForge.Domain.PickedDocument>)[.. files.Keys.Select(k => new PKForge.Domain.PickedDocument(k, Path.GetFileName(k)))]);
+        public ValueTask<ReadOnlyMemory<byte>> ReadFileAsync(string documentId, CancellationToken cancellationToken = default) => new(files[documentId]);
+        public ValueTask WriteFileAsync(string treeId, string fileName, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Folder_import_reads_nested_rogue_files_and_skips_duplicates()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var one = session.ExportSlot(-1, 0).Data;
+        var two = session.ExportSlot(-1, 1).Data;
+        var folder = new FakeFolder(new()
+        {
+            ["content://t/a/Mon1.pk3ex"] = one,
+            ["content://t/a/deep/er/Mon2.pk3ex"] = two,
+            ["content://t/a/copy/Mon1b.pk3ex"] = one,
+            ["content://t/a/notes.txt"] = "hello"u8.ToArray(),
+        });
+        var directory = Path.Combine(Path.GetTempPath(), "pkforge-folder-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var bank = new PKForge.Infrastructure.FileBankService(directory);
+            var result = await PKForge.Infrastructure.BankArchive.ImportAsync(
+                bank, (d, n) => Engine.TryDescribeEntity(d, n, n), folder, "tree");
+            Assert.Equal(2, result.Imported);
+            Assert.Equal(1, result.SkippedDuplicates);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {

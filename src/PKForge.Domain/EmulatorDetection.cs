@@ -61,7 +61,7 @@ public interface IFolderPicker
 
 /// <summary>
 /// Reads and writes named files inside an <see cref="IFolderPicker"/> grant (bank
-/// archives, bulk moves). List is flat: only files directly inside the folder.
+/// archives, bulk moves). The listing includes files in subfolders (the Android implementation walks the tree).
 /// </summary>
 public interface IFolderFileAccess
 {
