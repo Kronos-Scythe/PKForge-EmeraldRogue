@@ -153,6 +153,21 @@ public sealed class RogueSessionTests
     }
 
     [Fact]
+    public void Build_parts_are_listed_and_editable_in_key_items()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var names = session.GetItemNames();
+        Assert.Equal("Build Parts", names[834]);
+        var key = session.GetBag().Single(p => p.Name == "Key Items");
+        Assert.True(key.Items.Any(i => i.Id == 834 && i.Count == 9));
+        Assert.True(session.GetPouchLegalItems("Key Items").Contains(834));
+        Assert.Equal(250, session.SetItemCount("Key Items", 834, 250));
+        var again = session.GetBag().Single(p => p.Name == "Key Items");
+        Assert.True(again.Items.Any(i => i.Id == 834 && i.Count == 250));
+    }
+
+    [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {
         if (Sample() is not { } bytes) return;

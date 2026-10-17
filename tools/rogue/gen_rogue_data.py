@@ -174,6 +174,13 @@ def main():
             tu.write_text('#include "global.h"\n#include "constants/moves.h"\n#include "constants/abilities.h"\n'
                           f'#include "{src_file[len("src/"):]}"\n')
             text_pp[name] = preprocess(rogue, str(tu), stub)
+        tu = stub / "rogueitems.c"
+        tu.write_text('#include "global.h"\n#include "constants/items.h"\n#include "rogue.h"\n'
+                      '#include "data/rogue_items.h"\n')
+        try:
+            rogue_items_c = preprocess(rogue, str(tu), stub)
+        except Exception:
+            rogue_items_c = ""
 
     # ---- species -----------------------------------------------------------------------------
     species_raw = parse_array(pokemon_c, r"const struct SpeciesInfo gSpeciesInfo\[\]\s*=\s*\{")
@@ -275,6 +282,11 @@ def main():
     # ---- items ------------------------------------------------------------------------------------
     items_raw = parse_array(item_c, r"const struct Item gItems\[\]\s*=\s*\{")
     item_fields = {k: dict(split_top_level(b)) for k, b in items_raw.items()}
+    if rogue_items_c:
+        for k, b in parse_array(rogue_items_c, r"const struct RogueItem gRogueItems\[[^\]]*\]\s*=\s*\{").items():
+            f = dict(split_top_level(b))
+            if "itemId" in f:
+                item_fields["(" + f["itemId"] + ")"] = f
     ie = set(item_fields)
     for f in item_fields.values():
         if "pocket" in f:
