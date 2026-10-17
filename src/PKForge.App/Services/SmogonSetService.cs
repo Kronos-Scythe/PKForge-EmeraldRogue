@@ -62,6 +62,57 @@ public static class SmogonSetService
     private static readonly string[] SinglesStats = ["gen9ou", "gen9ubers", "gen9uu"];
     private static readonly string[] DoublesStats = ["gen9doublesou", "gen9vgc2026", "gen9vgc2025"];
 
+    /// <summary>Name spellings worth trying for a species ("Urshifu Rapid Strike" -> "Urshifu-Rapid-Strike" -> "Urshifu").</summary>
+    private static IEnumerable<string> NameVariants(string species)
+    {
+        var name = species.Trim();
+        yield return name;
+        var hyphenated = name.Replace(' ', '-');
+        if (hyphenated != name) yield return hyphenated;
+        var first = name.Split(' ', '-')[0];
+        if (first.Length > 0 && first != name) yield return first;
+    }
+
+    /// <summary>
+    /// Every Smogon set for one Pokémon in a single list: all curated strategies (every singles and doubles
+    /// format, VGC included) plus the most-used build of each ladder. The pick comes back as Showdown text.
+    /// </summary>
+    public static async Task<string?> PickForSpeciesAsync(Grid host, string species)
+    {
+        var overlay = LoadingOverlay.Show(host, $"Smogon sets for {species}…", "Downloading the set list and usage statistics (saved on the device after the first time).");
+        var sets = new List<(string Label, SmogonSetInfo Set)>();
+        string? error = null;
+        string used = species.Trim();
+        try
+        {
+            foreach (var name in NameVariants(species))
+            {
+                var (curated, loadError) = await FindAsync(name, null);
+                error ??= loadError;
+                if (curated.Count == 0) continue;
+                used = name;
+                sets.AddRange(curated.Select(set => ($"{SmogonSets.FormatLabel(set.Format)} · {set.Name}", set)));
+                break;
+            }
+            var usage = await Task.WhenAll(
+                FindUsageAsync(used, false), FindUsageAsync(used, true));
+            sets.AddRange(usage.SelectMany(list => list).Select(set => ($"{SmogonSets.FormatLabel(set.Format)} · most used", set)));
+        }
+        finally { overlay.Close(); }
+
+        if (sets.Count == 0)
+        {
+            await PadMenu.ShowAsync(host, "Smogon sets", error ?? $"No Smogon set or usage data was found for \"{species}\".", "OK");
+            return null;
+        }
+        // Same label twice (two sets with one name in a format): keep both, numbered.
+        var labelled = sets.GroupBy(x => x.Label).SelectMany(g => g.Select((x, i) => (Label: g.Count() > 1 ? $"{x.Label} ({i + 1})" : x.Label, x.Set))).ToList();
+        var shown = labelled.Take(60).ToList();
+        var choice = await PadMenu.ShowAsync(host, $"{used} · {shown.Count} Smogon sets", "Pick a strategy to import.",
+            shown.Select(x => new PadOption(x.Label, IconPath: "script")).ToArray());
+        return choice is null ? null : shown.First(x => x.Label == choice).Set.Showdown;
+    }
+
     /// <summary>One monthly usage file (a few MB), cached for three days; null when it cannot be had.</summary>
     private static async Task<string?> LoadUsageAsync(string format, CancellationToken cancellationToken = default)
     {

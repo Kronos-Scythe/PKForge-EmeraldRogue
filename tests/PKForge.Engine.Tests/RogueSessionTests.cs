@@ -263,6 +263,21 @@ public sealed class RogueSessionTests
     }
 
     [Fact]
+    public void Pokemon_from_another_game_import_into_rogue_through_their_set()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = Engine.OpenSession(bytes, "Rogue");
+        var pk = new PKHeX.Core.PK9 { Species = 998, CurrentLevel = 50, Nature = PKHeX.Core.Nature.Adamant, Move1 = 14 };
+        pk.PID = 0x12345678;
+        var slot = Enumerable.Range(0, 30).First(i => session.ReadEntity(9, i).IsEmpty);
+        Assert.True(session.ImportSlot(9, slot, pk.Data.ToArray(), "998 - Baxcalibur.pk9"));
+        var landed = session.ReadEntity(9, slot);
+        Assert.False(landed.IsEmpty);
+        Assert.Equal(998, landed.Species);
+        Assert.Equal(50, landed.Level);
+    }
+
+    [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {
         if (Sample() is not { } bytes) return;

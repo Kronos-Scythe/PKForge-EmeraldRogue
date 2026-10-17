@@ -397,7 +397,8 @@ internal sealed class RogueEngineSession : ISaveEngineSession
     public bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (EntityBytes.Normalize(format) != RadicalRed.CfruEntity.Rogue) return false;
+        if (EntityBytes.Normalize(format) != RadicalRed.CfruEntity.Rogue)
+            return ImportForeign(box, slot, fileBytes, format);
         if (fileBytes.Length != RogueMon.BoxSize) return false;
         if (!new RogueMon(fileBytes.ToArray(), 0, party: false).LooksValid) return false;
 
@@ -417,6 +418,26 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         fileBytes.CopyTo(_storage.AsSpan(BoxMonOffset(box, slot), RogueMon.BoxSize));
         CommitStorage();
         return true;
+    }
+
+    /// <summary>
+    /// A Pokémon from another game (.pk9, .pk8, .pk3, ...) enters Rogue the way a Showdown set does: its species, level,
+    /// nature, ability, item, moves, EVs/IVs and shininess are rebuilt from Rogue's own tables. Box slots only.
+    /// </summary>
+    private bool ImportForeign(int box, int slot, byte[] fileBytes, string? format)
+    {
+        if (box < 0 || TryMon(box, slot) is null) return false;
+        PKM? pk;
+        try { pk = EntityBytes.Parse(fileBytes, format); }
+        catch (Exception) { return false; }
+        if (pk is null || pk.Species == 0) return false;
+        try
+        {
+            var text = ShowdownParsing.GetShowdownText(pk);
+            if (!string.IsNullOrWhiteSpace(pk.Nickname) && pk.IsNicknamed) { /* the set text already carries the nickname */ }
+            return GenerateFromShowdownText(box, slot, text).Success;
+        }
+        catch (Exception) { return false; }
     }
 
     // ── generation (the wizard) ──

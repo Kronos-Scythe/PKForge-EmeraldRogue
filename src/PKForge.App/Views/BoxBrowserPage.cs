@@ -3825,6 +3825,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "A copy joins another linked game; the original stays here.")),
             new PadOption("Export .pk file", IconPath: "export", Detail: "Share this Pokémon as a file."),
             new PadOption("Show as Showdown set", IconPath: "script", Detail: "Its set as Showdown text you can copy."),
+            Allowed(SaveAction.CreateMon, new("Smogon sets (online)", IconPath: "script", Detail: "Every Smogon strategy and most-used build for this Pokémon; import one.")),
             new PadOption("Show as QR code", IconPath: "qr", Detail: "Its Showdown set as a QR code."),
             new PadOption("Show as .pk QR", IconPath: "qr", Detail: "The whole Pokémon as a QR code that PKForge can scan into the Bank."),
             new PadOption("RNG / IVs", IconPath: "dice", Detail: "See its PID and IVs, and change its nature without losing shininess."),
@@ -3924,6 +3925,15 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             case "Show as Showdown set":
                 await ShowShowdownAsync(slot);
                 return;
+            case "Smogon sets (online)":
+            {
+                var smogonSession = _sessionsFor();
+                if (smogonSession is null) return;
+                var species = smogonSession.ReadEntity(_viewModel.BoxIndex, slot).SpeciesName;
+                var picked = await SmogonSetService.PickForSpeciesAsync(_hostGrid, species);
+                if (picked is not null) await ImportShowdownPreviewedAsync("Smogon set", picked);
+                return;
+            }
             case "Export .pk file":
                 await ExportSlotAsync(slot);
                 return;
