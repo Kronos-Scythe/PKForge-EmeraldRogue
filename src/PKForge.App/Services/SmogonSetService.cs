@@ -10,7 +10,12 @@ namespace PKForge.App.Services;
 /// </summary>
 public static class SmogonSetService
 {
-    private const string Url = "https://pkmn.github.io/smogon/data/sets/gen9.json";
+    // The repository file is the source of the published site; the site is the fallback.
+    private static readonly string[] Urls =
+    [
+        "https://raw.githubusercontent.com/pkmn/smogon/main/data/sets/gen9.json",
+        "https://pkmn.github.io/smogon/data/sets/gen9.json",
+    ];
     private static readonly TimeSpan CacheLife = TimeSpan.FromDays(7);
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
@@ -26,20 +31,24 @@ public static class SmogonSetService
             try { return (await File.ReadAllTextAsync(path, cancellationToken), null); }
             catch (IOException) { /* fall through to a download */ }
         }
-        try
+        foreach (var url in Urls)
         {
-            var json = await Http.GetStringAsync(Url, cancellationToken);
-            try { await File.WriteAllTextAsync(path, json, cancellationToken); } catch (IOException) { /* cache is a convenience */ }
-            return (json, null);
-        }
-        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or IOException)
-        {
-            if (cached is not null)
+            try
             {
-                try { return (await File.ReadAllTextAsync(path, cancellationToken), null); } catch (IOException) { }
+                var json = await Http.GetStringAsync(url, cancellationToken);
+                try { await File.WriteAllTextAsync(path, json, cancellationToken); } catch (IOException) { /* cache is a convenience */ }
+                return (json, null);
             }
-            return (null, "Could not reach the Smogon set data. Check the internet connection and try again.");
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or IOException)
+            {
+                // try the next source
+            }
         }
+        if (cached is not null)
+        {
+            try { return (await File.ReadAllTextAsync(path, cancellationToken), null); } catch (IOException) { }
+        }
+        return (null, "Could not reach the Smogon set data. Check the internet connection and try again.");
     }
 
     public static async Task<(IReadOnlyList<SmogonSetInfo> Sets, string? Error)> FindAsync(

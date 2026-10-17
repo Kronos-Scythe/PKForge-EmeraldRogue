@@ -274,18 +274,22 @@ public sealed class RogueSessionTests
     {
         if (Sample() is not { } bytes) return;
         const string json = """
-        {"gen9ou":{"Garchomp":{"Swords Dance":{"moves":["Swords Dance","Earthquake",["Scale Shot","Outrage"],"Stone Edge"],"ability":"Rough Skin","item":"Rocky Helmet","nature":"Jolly","evs":{"hp":4,"atk":252,"spe":252},"teratypes":["Ground"]}}},
-         "gen9doublesou":{"Garchomp":{"Doubles":{"moves":["Protect","Dragon Claw"],"ability":["Rough Skin"],"item":"Life Orb","nature":"Adamant","evs":{"atk":252,"spe":252,"hp":4}}}},
-         "gen9ou2":{"Other":{"X":{"moves":["Tackle"]}}}}
+        {"Garchomp":{"ou":{"TankChomp":{"moves":["Earthquake","Dragon Tail","Stealth Rock","Spikes"],"ability":"Rough Skin","item":"Rocky Helmet","nature":"Impish","evs":{"hp":252,"def":216,"spe":40},"teratypes":["Ghost","Steel"]},
+            "Swords Dance":{"moves":["Swords Dance","Scale Shot","Earthquake",["Fire Fang","Dragon Tail"]],"ability":"Rough Skin","item":"Loaded Dice","nature":"Jolly","evs":{"atk":252,"spd":4,"spe":252}}},
+          "doublesou":{"Doubles":{"moves":["Protect","Dragon Claw"],"ability":["Rough Skin"],"item":"Life Orb","nature":"Adamant","evs":{"atk":252,"spe":252,"hp":4}}},
+          "monotype":{"Swords Dance (Ground)":{"moves":["Swords Dance"],"item":"Life Orb"}}},
+         "Pikachu":{"lc":{"Lead":{"moves":["Thunderbolt"]}}}}
         """;
         var all = SmogonSets.Find(json, "garchomp");
-        Assert.Equal(2, all.Count);
+        Assert.Equal(4, all.Count);
+        Assert.Equal("ou", all[0].Format); // mainstream ladders sort first
         Assert.Single(SmogonSets.Find(json, "Garchomp", doubles: true));
-        Assert.Single(SmogonSets.Find(json, "Garchomp", doubles: false));
+        Assert.Equal(3, SmogonSets.Find(json, "Garchomp", doubles: false).Count);
         Assert.Empty(SmogonSets.Find(json, "Pikachu"));
-        Assert.Equal("Doubles OU", SmogonSets.FormatLabel("gen9doublesou"));
-        var singles = SmogonSets.Find(json, "Garchomp", doubles: false)[0];
-        Assert.True(singles.Showdown.Contains("Garchomp @ Rocky Helmet") && singles.Showdown.Contains("EVs: 4 HP / 252 Atk / 252 Spe"));
+        Assert.Equal("Doubles OU", SmogonSets.FormatLabel("doublesou"));
+        Assert.Equal("VGC 2025", SmogonSets.FormatLabel("vgc2025"));
+        var singles = SmogonSets.Find(json, "Garchomp", doubles: false).First(set => set.Name == "Swords Dance");
+        Assert.True(singles.Showdown.Contains("Garchomp @ Loaded Dice") && singles.Showdown.Contains("EVs: 252 Atk / 4 SpD / 252 Spe"));
 
         using var session = Engine.OpenSession(bytes, "Rogue");
         var slot = Enumerable.Range(0, 30).First(sl => session.ReadEntity(9, sl).IsEmpty);
@@ -297,7 +301,7 @@ public sealed class RogueSessionTests
         Assert.Equal(445, mon.Species);
         Assert.Equal(252, mon.EVs[1]);
         Assert.Equal(252, mon.EVs[5]);
-        Assert.True(mon.HeldItem > 0 && session.GetItemNames()[mon.HeldItem] == "Rocky Helmet");
+        Assert.True(mon.HeldItem > 0 && session.GetItemNames()[mon.HeldItem] == "Loaded Dice");
         Assert.True(new[] { mon.Move1, mon.Move2, mon.Move3, mon.Move4 }.Contains(14)); // Swords Dance
     }
 

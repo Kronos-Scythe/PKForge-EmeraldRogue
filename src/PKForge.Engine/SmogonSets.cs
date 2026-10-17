@@ -17,24 +17,49 @@ public static class SmogonSets
         [("hp", "HP"), ("atk", "Atk"), ("def", "Def"), ("spa", "SpA"), ("spd", "SpD"), ("spe", "Spe")];
 
     public static bool IsDoublesFormat(string format) =>
-        format.Contains("doubles", StringComparison.OrdinalIgnoreCase) || format.Contains("vgc", StringComparison.OrdinalIgnoreCase)
-        || format.Contains("battlespot", StringComparison.OrdinalIgnoreCase);
+        format.Contains("doubles", StringComparison.OrdinalIgnoreCase) || format.Contains("vgc", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>"gen9ou" -> "OU", "gen9doublesou" -> "Doubles OU", "gen9vgc2025regg" -> "VGC 2025 Reg G".</summary>
+    private static readonly Dictionary<string, string> Labels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ou"] = "OU", ["uu"] = "UU", ["ru"] = "RU", ["nu"] = "NU", ["pu"] = "PU", ["zu"] = "ZU", ["lc"] = "LC", ["nfe"] = "NFE",
+        ["ubers"] = "Ubers", ["ubersuu"] = "Ubers UU", ["anythinggoes"] = "Anything Goes", ["cap"] = "CAP",
+        ["doublesou"] = "Doubles OU", ["battlestadiumsingles"] = "Battle Stadium Singles", ["battlestadiumdoubles"] = "Battle Stadium Doubles",
+        ["nationaldex"] = "National Dex", ["nationaldexdoubles"] = "National Dex Doubles", ["nationaldexubers"] = "National Dex Ubers",
+        ["nationaldexuu"] = "National Dex UU", ["nationaldexru"] = "National Dex RU", ["nationaldexmonotype"] = "National Dex Monotype",
+        ["monotype"] = "Monotype", ["1v1"] = "1v1", ["stabmons"] = "STABmons", ["almostanyability"] = "Almost Any Ability",
+        ["godlygift"] = "Godly Gift", ["balancedhackmons"] = "Balanced Hackmons", ["mixandmega"] = "Mix and Mega",
+        ["partnersincrime"] = "Partners in Crime", ["inheritance"] = "Inheritance",
+    };
+
+    /// <summary>"ou" -> "OU", "doublesou" -> "Doubles OU", "vgc2025" -> "VGC 2025" (a "gen9" prefix, if any, is dropped).</summary>
     public static string FormatLabel(string format)
     {
-        var name = format.StartsWith("gen", StringComparison.OrdinalIgnoreCase) && format.Length > 4 ? format[4..] : format;
-        if (name.StartsWith("doubles", StringComparison.OrdinalIgnoreCase))
-            return "Doubles " + name[7..].ToUpperInvariant();
-        if (name.StartsWith("vgc", StringComparison.OrdinalIgnoreCase))
-            return "VGC " + name[3..].ToUpperInvariant();
-        return name.ToUpperInvariant();
+        var name = format.Length > 4 && format.StartsWith("gen", StringComparison.OrdinalIgnoreCase) && char.IsDigit(format[3]) ? format[4..] : format;
+        if (Labels.TryGetValue(name, out var known)) return known;
+        if (name.StartsWith("vgc", StringComparison.OrdinalIgnoreCase)) return "VGC " + name[3..];
+        if (name.StartsWith("doubles", StringComparison.OrdinalIgnoreCase)) return "Doubles " + name[7..].ToUpperInvariant();
+        return name.Length <= 4 ? name.ToUpperInvariant() : char.ToUpperInvariant(name[0]) + name[1..];
+    }
+
+    // The mainstream ladders first; the gimmick metagames after.
+    private static readonly string[] Priority =
+        ["ou", "ubers", "uu", "ru", "nu", "pu", "zu", "lc", "doublesou", "vgc2025", "vgc2024", "vgc2023", "battlestadiumsingles", "battlestadiumdoubles", "anythinggoes", "nationaldex"];
+
+    private static int Rank(string format)
+    {
+        var name = format.Length > 4 && format.StartsWith("gen", StringComparison.OrdinalIgnoreCase) && char.IsDigit(format[3]) ? format[4..] : format;
+        var index = Array.FindIndex(Priority, p => p.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 ? index : Priority.Length;
     }
 
     private static string Normalize(string text) =>
         new([.. text.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant)]);
 
-    /// <summary>Every set the data holds for <paramref name="species"/>; <paramref name="doubles"/> null = both kinds.</summary>
+    /// <summary>
+    /// Every set the data holds for <paramref name="species"/>; <paramref name="doubles"/> null = both kinds.
+    /// Reads the published layout (species, then format, then named set) and, tolerantly, the older
+    /// format-first layout.
+    /// </summary>
     public static IReadOnlyList<SmogonSetInfo> Find(string json, string species, bool? doubles = null)
     {
         var wanted = Normalize(species);
@@ -46,21 +71,32 @@ public static class SmogonSets
         using (document)
         {
             if (document.RootElement.ValueKind != JsonValueKind.Object) return found;
-            foreach (var format in document.RootElement.EnumerateObject())
+
+            void AddSets(string speciesName, string format, JsonElement sets)
             {
-                if (format.Value.ValueKind != JsonValueKind.Object) continue;
-                var isDoubles = IsDoublesFormat(format.Name);
-                if (doubles is { } only && only != isDoubles) continue;
-                foreach (var entry in format.Value.EnumerateObject())
+                var isDoubles = IsDoublesFormat(format);
+                if (doubles is { } only && only != isDoubles) return;
+                if (sets.ValueKind != JsonValueKind.Object) return;
+                foreach (var set in sets.EnumerateObject())
+                    if (set.Value.ValueKind == JsonValueKind.Object)
+                        found.Add(new SmogonSetInfo(format, speciesName, set.Name, ToShowdown(speciesName, set.Value), isDoubles));
+            }
+
+            foreach (var top in document.RootElement.EnumerateObject())
+            {
+                if (top.Value.ValueKind != JsonValueKind.Object) continue;
+                if (Normalize(top.Name) == wanted)
                 {
-                    if (Normalize(entry.Name) != wanted || entry.Value.ValueKind != JsonValueKind.Object) continue;
-                    foreach (var set in entry.Value.EnumerateObject())
-                        if (set.Value.ValueKind == JsonValueKind.Object)
-                            found.Add(new SmogonSetInfo(format.Name, entry.Name, set.Name, ToShowdown(entry.Name, set.Value), isDoubles));
+                    foreach (var format in top.Value.EnumerateObject())
+                        AddSets(top.Name, format.Name, format.Value);
+                    continue;
                 }
+                foreach (var entry in top.Value.EnumerateObject())
+                    if (Normalize(entry.Name) == wanted)
+                        AddSets(entry.Name, top.Name, entry.Value);
             }
         }
-        return found;
+        return [.. found.OrderBy(set => Rank(set.Format))];
     }
 
     private static string? First(JsonElement element, string property)
