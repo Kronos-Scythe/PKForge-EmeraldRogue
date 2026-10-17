@@ -160,11 +160,11 @@ public sealed class RogueSessionTests
         var names = session.GetItemNames();
         Assert.Equal("Build Parts", names[834]);
         var key = session.GetBag().Single(p => p.Name == "Key Items");
-        Assert.True(key.Items.Any(i => i.Id == 834 && i.Count == 9));
-        Assert.True(session.GetPouchLegalItems("Key Items").Contains(834));
+        Assert.Contains(key.Items, i => i.Id == 834 && i.Count == 9);
+        Assert.Contains(834, session.GetPouchLegalItems("Key Items"));
         Assert.Equal(250, session.SetItemCount("Key Items", 834, 250));
         var again = session.GetBag().Single(p => p.Name == "Key Items");
-        Assert.True(again.Items.Any(i => i.Id == 834 && i.Count == 250));
+        Assert.Contains(again.Items, i => i.Id == 834 && i.Count == 250);
     }
 
     [Fact]
