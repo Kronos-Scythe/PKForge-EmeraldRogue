@@ -73,7 +73,7 @@ public sealed class PokedexPicker : IPadHandler
         var missing = new List<int>();
         for (var id = 1; id < data.SpeciesNames.Count; id++)
         {
-            if (data.SpeciesNames[id].Length > 0 && !File.Exists(IconCachePath(id)))
+            if (data.SpeciesNames[id].Length > 0 && !File.Exists(IconCachePath(id)) && !File.Exists(IconCachePath(id) + ".none"))
                 missing.Add(id);
         }
         if (missing.Count < 30)
@@ -84,10 +84,10 @@ public sealed class PokedexPicker : IPadHandler
 
         try
         {
-            foreach (var chunk in missing.Chunk(8))
+            foreach (var chunk in missing.Chunk(3))
             {
                 await Task.WhenAll(chunk.Select(NormalizeIconAsync)).ConfigureAwait(false);
-                await Task.Delay(60).ConfigureAwait(false); // let the UI and the fan breathe
+                await Task.Delay(120).ConfigureAwait(false); // let the UI and the fan breathe
             }
         }
         catch { /* icon preparation is optional; the picker remains usable without it */ }
@@ -120,7 +120,12 @@ public sealed class PokedexPicker : IPadHandler
                 await Task.Run(() => NormalizeIcon(bytes, target)).ConfigureAwait(false);
             }
         }
-        catch { /* no bundled sprite for this id */ }
+        catch
+        {
+            // No bundled sprite for this id (Rogue-only species): remember it so the sweep
+            // never retries these (each retry threw two exceptions per id on every launch).
+            try { File.WriteAllBytes(IconCachePath(id) + ".none", []); } catch { }
+        }
     }
 
     private static string IconCachePath(int species) =>

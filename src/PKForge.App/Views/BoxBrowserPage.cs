@@ -1285,6 +1285,16 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         RefreshFooter();
     }
 
+    /// <summary>The official species name for Smogon lookups: hacks shorten some names ("FluttrMane"), so use the national dex name.</summary>
+    private static string SmogonName(ISaveEngineSession session, int box, int slot)
+    {
+        var detail = session.ReadEntity(box, slot);
+        var data = IPlatformApplication.Current?.Services.GetService<IGameDataService>();
+        return data is not null && detail.Species > 0 && detail.Species < data.SpeciesNames.Count && data.SpeciesNames[detail.Species].Length > 0
+            ? data.SpeciesNames[detail.Species]
+            : detail.SpeciesName;
+    }
+
     /// <summary>Replaces every marked Pokémon in place with the most-used Smogon build for its species (one backed-up write).</summary>
     private async Task SmogonSelectionAsync()
     {
@@ -1297,7 +1307,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         }
         var marked = _viewModel.MarkedSlots.ToList();
         if (marked.Count == 0) return;
-        var species = marked.Select(m => session.ReadEntity(m.Box, m.Slot).SpeciesName).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList();
+        var species = marked.Select(m => SmogonName(session, m.Box, m.Slot)).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList();
         var overlay = LoadingOverlay.Show(_hostGrid, "Fetching Smogon sets…", $"Looking up {species.Count} species.");
         var sets = new Dictionary<string, string>();
         try
@@ -1306,7 +1316,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 if (await SmogonSetService.TopUsageSetAsync(name) is { } text) sets[name] = text;
         }
         finally { overlay.Close(); }
-        var applicable = marked.Count(m => sets.ContainsKey(session.ReadEntity(m.Box, m.Slot).SpeciesName));
+        var applicable = marked.Count(m => sets.ContainsKey(SmogonName(session, m.Box, m.Slot)));
         if (applicable == 0)
         {
             _viewModel.Status = "No Smogon data found for the marked Pokémon (or the internet is unreachable).";
@@ -1319,7 +1329,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         {
             var done = 0;
             foreach (var (box, slot) in marked)
-                if (sets.TryGetValue(s.ReadEntity(box, slot).SpeciesName, out var text) && s.ApplyShowdownToSlot(box, slot, text).Success)
+                if (sets.TryGetValue(SmogonName(s, box, slot), out var text) && s.ApplyShowdownToSlot(box, slot, text).Success)
                     done++;
             return done > 0
                 ? new GenerationOutcome(true, $"{done} Pokémon replaced with their most-used Smogon set.")
@@ -3977,7 +3987,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             {
                 var smogonSession = _sessionsFor();
                 if (smogonSession is null) return;
-                var species = smogonSession.ReadEntity(_viewModel.BoxIndex, slot).SpeciesName;
+                var species = SmogonName(smogonSession, _viewModel.BoxIndex, slot);
                 var picked = await SmogonSetService.PickForSpeciesAsync(_hostGrid, species);
                 if (picked is null) return;
                 if (!smogonSession.SupportsInPlaceSets)
