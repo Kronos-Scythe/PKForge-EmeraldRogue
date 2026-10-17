@@ -297,6 +297,21 @@ public sealed class RogueSessionTests
     }
 
     [Fact]
+    public void Dex_shiny_state_toggles_through_the_flag_catalog()
+    {
+        if (Sample() is not { } bytes) return;
+        using var session = (PKForge.Engine.Rogue.RogueEngineSession)Engine.OpenSession(bytes, "Rogue");
+        session.SetDexEntry(25, seen: true, caught: true);
+        Assert.False(session.GetDexShiny(25));
+        session.SetDexShiny(25, true);
+        Assert.True(session.GetDexShiny(25));
+        Assert.True(session.GetDexEntry(25).Caught);
+        Assert.True(EventFlagService.SetFlag(session, EventFlagBank.Event, 200_025, false).Success);
+        Assert.False(session.GetDexShiny(25));
+        Assert.True(session.GetDexEntry(25).Caught);
+    }
+
+    [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {
         if (Sample() is not { } bytes) return;

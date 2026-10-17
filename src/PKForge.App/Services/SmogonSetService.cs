@@ -73,6 +73,20 @@ public static class SmogonSetService
         if (first.Length > 0 && first != name) yield return first;
     }
 
+    /// <summary>The single best "most used" build for a species: singles ladders first, then doubles. Null when none exists.</summary>
+    public static async Task<string?> TopUsageSetAsync(string species, CancellationToken cancellationToken = default)
+    {
+        foreach (var name in NameVariants(species))
+        {
+            foreach (var doubles in new[] { false, true })
+            {
+                var found = await FindUsageAsync(name, doubles, cancellationToken);
+                if (found.Count > 0) return found[0].Showdown;
+            }
+        }
+        return null;
+    }
+
     /// <summary>
     /// Every Smogon set for one Pokémon in a single list: all curated strategies (every singles and doubles
     /// format, VGC included) plus the most-used build of each ladder. The pick comes back as Showdown text.

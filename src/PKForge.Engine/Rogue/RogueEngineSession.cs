@@ -954,6 +954,21 @@ internal sealed class RogueEngineSession : ISaveEngineSession
         CommitSb1();
     }
 
+    /// <summary>Whether the dex records this species as caught shiny (state 3).</summary>
+    public bool GetDexShiny(int national) => DexState(DexSpecies(national)) == 3;
+
+    /// <summary>Marks a species caught shiny, or back to plain caught (marking shiny also marks it caught).</summary>
+    public void SetDexShiny(int national, bool shiny)
+    {
+        var id = DexSpecies(national);
+        if (id <= 0) return;
+        var current = DexState(id);
+        var next = shiny ? 3 : current == 3 ? 2 : current;
+        if (next == current) return;
+        SetDexState(id, next);
+        CommitSb1();
+    }
+
     public bool IsDexSpecies(int species) => DexSpecies(species) > 0 && RogueData.NationalIdOf(DexSpecies(species)) == species;
 
     public DexProgress GetDexProgress()

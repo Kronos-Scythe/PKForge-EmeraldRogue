@@ -175,6 +175,7 @@ public static class EventFlagService
     }
 
     private const int HubAreaBase = 100_000;
+    private const int DexShinyBase = 200_000;
     private const int HubUpgradeBase = 101_000;
 
     private static EventCatalog LoadRogue(Rogue.RogueEngineSession rogue)
@@ -198,6 +199,14 @@ public static class EventFlagService
                     part.Name + cost + needs, part.IsArea ? "Hub: Buildings" : "Hub: Upgrades",
                     part.Built ? 1 : 0, part.Built ? 1 : 0, 0, 1, false, []));
             }
+        // Caught-shiny dex state per species (the Rogue dex tracks seen / caught / caught shiny).
+        foreach (var id in Rogue.RogueData.BaseSpeciesIds)
+        {
+            var national = Rogue.RogueData.NationalIdOf(id);
+            var shiny = rogue.GetDexShiny(national) ? 1 : 0;
+            flags.Add(new EventEntry(EventEntryKind.Flag, EventFlagBank.Event, DexShinyBase + national, $"shiny {national:0000}",
+                Rogue.RogueData.SpeciesName(id), "Dex: Caught shiny", shiny, shiny, 0, 1, false, []));
+        }
         var work = new List<EventEntry>(Rogue.RogueEvents.VarCount);
         for (var index = 0; index < Rogue.RogueEvents.VarCount; index++)
         {
@@ -213,6 +222,11 @@ public static class EventFlagService
     {
         if (session is Rogue.RogueEngineSession rogue)
         {
+            if (index >= DexShinyBase)
+            {
+                rogue.SetDexShiny(index - DexShinyBase, value);
+                return new GenerationOutcome(true, $"Dex #{index - DexShinyBase:0000} {(value ? "marked caught shiny" : "back to plain caught")}.");
+            }
             if (index >= HubUpgradeBase) return rogue.SetHubUpgrade(index - HubUpgradeBase, value);
             if (index >= HubAreaBase) return rogue.SetHubArea(index - HubAreaBase, value);
             if ((uint)index >= Rogue.RogueEvents.FlagCount) return new GenerationOutcome(false, $"No flag {index} in this save.");

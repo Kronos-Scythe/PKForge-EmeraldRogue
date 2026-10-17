@@ -1192,6 +1192,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "Copies join another linked game; the originals stay here.")),
                 Allowed(SaveAction.Duplicate, new("Duplicate", IconPath: "copy", Detail: "Clone the marked Pokémon into the first free box slots.")),
                 new PadOption("Export (.pk files)", IconPath: "export", Detail: "Share each marked Pokémon as its own file."),
+                Allowed(SaveAction.BatchEdit, new("Smogon most-used sets (online)", IconPath: "script", Detail: "Replace each marked Pokémon in place with its most-used Smogon build.")),
                 new PadOption("Release", IconPath: "release")));
             options.AddRange(BulkOptions());
         }
@@ -1264,6 +1265,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 _viewModel.Status = $"Exported {paths.Count} Pokémon.";
                 break;
             }
+            case "Smogon most-used sets (online)":
+                await SmogonSelectionAsync();
+                break;
             case "Release":
                 await ReleaseSelectionAsync();
                 break;
@@ -1279,6 +1283,50 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         _canvas.InvalidateSurface();
         _boxBar.InvalidateSurface();
         RefreshFooter();
+    }
+
+    /// <summary>Replaces every marked Pokémon in place with the most-used Smogon build for its species (one backed-up write).</summary>
+    private async Task SmogonSelectionAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        if (!session.SupportsInPlaceSets)
+        {
+            _viewModel.Status = "This game cannot replace Pokémon from a set in place.";
+            return;
+        }
+        var marked = _viewModel.MarkedSlots.ToList();
+        if (marked.Count == 0) return;
+        var species = marked.Select(m => session.ReadEntity(m.Box, m.Slot).SpeciesName).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList();
+        var overlay = LoadingOverlay.Show(_hostGrid, "Fetching Smogon sets…", $"Looking up {species.Count} species.");
+        var sets = new Dictionary<string, string>();
+        try
+        {
+            foreach (var name in species)
+                if (await SmogonSetService.TopUsageSetAsync(name) is { } text) sets[name] = text;
+        }
+        finally { overlay.Close(); }
+        var applicable = marked.Count(m => sets.ContainsKey(session.ReadEntity(m.Box, m.Slot).SpeciesName));
+        if (applicable == 0)
+        {
+            _viewModel.Status = "No Smogon data found for the marked Pokémon (or the internet is unreachable).";
+            return;
+        }
+        if (!await PadMenu.ConfirmAsync(_hostGrid, $"Replace {applicable} Pokémon?",
+                $"Each becomes its most-used Smogon build in the same slot, keeping level and shininess. {marked.Count - applicable} without data are skipped. One backed-up write.", "Replace"))
+            return;
+        var ok = await _viewModel.RunMutationAsync(s =>
+        {
+            var done = 0;
+            foreach (var (box, slot) in marked)
+                if (sets.TryGetValue(s.ReadEntity(box, slot).SpeciesName, out var text) && s.ApplyShowdownToSlot(box, slot, text).Success)
+                    done++;
+            return done > 0
+                ? new GenerationOutcome(true, $"{done} Pokémon replaced with their most-used Smogon set.")
+                : new GenerationOutcome(false, "No Pokémon could take a set.");
+        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.BatchEdit);
+        if (ok) _viewModel.RefreshAllSlots();
+        _canvas.InvalidateSurface();
     }
 
     private const string PartyNeedsOne = "THE PARTY NEEDS ONE POKéMON - UNMARK A PARTY MEMBER";
