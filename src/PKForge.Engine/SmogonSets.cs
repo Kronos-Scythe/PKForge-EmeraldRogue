@@ -143,4 +143,58 @@ public static class SmogonSets
             }
         return text.ToString().TrimEnd();
     }
+
+    /// <summary>
+    /// The most-used build for a species from a monthly usage-statistics file (pkmn/smogon data/stats/genNformat.json):
+    /// its top ability, item, Tera type, EV spread and nature, and the four most-used moves. Null when the
+    /// species has no usage in that format.
+    /// </summary>
+    public static SmogonSetInfo? FromUsage(string json, string species, string format)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("pokemon", out var all) || all.ValueKind != JsonValueKind.Object) return null;
+        JsonElement? entry = null; var key = species;
+        foreach (var p in all.EnumerateObject())
+            if (string.Equals(p.Name, species, StringComparison.OrdinalIgnoreCase)) { entry = p.Value; key = p.Name; break; }
+        if (entry is not { } mon) return null;
+
+        static string? Top(JsonElement parent, string name, Func<string, bool>? skip = null)
+        {
+            if (!parent.TryGetProperty(name, out var map) || map.ValueKind != JsonValueKind.Object) return null;
+            string? best = null; var bestValue = double.MinValue;
+            foreach (var p in map.EnumerateObject())
+            {
+                if (skip?.Invoke(p.Name) == true || p.Value.ValueKind != JsonValueKind.Number) continue;
+                if (p.Value.GetDouble() > bestValue) { best = p.Name; bestValue = p.Value.GetDouble(); }
+            }
+            return best;
+        }
+
+        var text = new StringBuilder();
+        var item = Top(mon, "items", n => n.Equals("Nothing", StringComparison.OrdinalIgnoreCase));
+        text.Append(key);
+        if (item is not null) text.Append(" @ ").Append(item);
+        text.AppendLine();
+        if (Top(mon, "abilities") is { } ability) text.Append("Ability: ").AppendLine(ability);
+        if (Top(mon, "teraTypes", n => n.Equals("Nothing", StringComparison.OrdinalIgnoreCase)) is { } tera) text.Append("Tera Type: ").AppendLine(tera);
+        if (Top(mon, "spreads") is { } spread && spread.Split(':') is { Length: 2 } parts)
+        {
+            var values = parts[1].Split('/');
+            if (values.Length == 6)
+            {
+                var labels = new[] { "HP", "Atk", "Def", "SpA", "SpD", "Spe" };
+                var line = new List<string>();
+                for (var k = 0; k < 6; k++)
+                    if (int.TryParse(values[k], out var ev) && ev > 0) line.Add($"{ev} {labels[k]}");
+                if (line.Count > 0) text.Append("EVs: ").AppendLine(string.Join(" / ", line));
+            }
+            text.Append(parts[0]).AppendLine(" Nature");
+        }
+        if (mon.TryGetProperty("moves", out var moves) && moves.ValueKind == JsonValueKind.Object)
+            foreach (var move in moves.EnumerateObject()
+                         .Where(p => p.Value.ValueKind == JsonValueKind.Number && !p.Name.Equals("Nothing", StringComparison.OrdinalIgnoreCase))
+                         .OrderByDescending(p => p.Value.GetDouble()).Take(4))
+                text.Append("- ").AppendLine(move.Name);
+        return new SmogonSetInfo(format, key, "Most used", text.ToString().TrimEnd(), IsDoublesFormat(format));
+    }
 }

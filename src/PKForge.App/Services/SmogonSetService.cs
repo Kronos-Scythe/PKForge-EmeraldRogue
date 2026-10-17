@@ -59,6 +59,45 @@ public static class SmogonSetService
         return (await Task.Run(() => SmogonSets.Find(json, species, doubles), cancellationToken), null);
     }
 
+    private static readonly string[] SinglesStats = ["gen9ou", "gen9ubers", "gen9uu"];
+    private static readonly string[] DoublesStats = ["gen9doublesou", "gen9vgc2026", "gen9vgc2025"];
+
+    /// <summary>One monthly usage file (a few MB), cached for three days; null when it cannot be had.</summary>
+    private static async Task<string?> LoadUsageAsync(string format, CancellationToken cancellationToken = default)
+    {
+        var path = Path.Combine(FileSystem.CacheDirectory, $"smogon-usage-{format}.json");
+        var cached = File.Exists(path) ? new FileInfo(path) : null;
+        try
+        {
+            if (cached is not null && DateTime.UtcNow - cached.LastWriteTimeUtc < TimeSpan.FromDays(3))
+                return await File.ReadAllTextAsync(path, cancellationToken);
+            var json = await Http.GetStringAsync($"https://raw.githubusercontent.com/pkmn/smogon/main/data/stats/{format}.json", cancellationToken);
+            try { await File.WriteAllTextAsync(path, json, cancellationToken); } catch (IOException) { }
+            return json;
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or IOException)
+        {
+            if (cached is not null)
+            {
+                try { return await File.ReadAllTextAsync(path, cancellationToken); } catch (IOException) { }
+            }
+            return null;
+        }
+    }
+
+    /// <summary>The most-used build of a species in each singles or doubles ladder where it has usage.</summary>
+    public static async Task<IReadOnlyList<SmogonSetInfo>> FindUsageAsync(string species, bool doubles, CancellationToken cancellationToken = default)
+    {
+        var found = new List<SmogonSetInfo>();
+        foreach (var format in doubles ? DoublesStats : SinglesStats)
+        {
+            var json = await LoadUsageAsync(format, cancellationToken);
+            if (json is null) continue;
+            if (await Task.Run(() => SmogonSets.FromUsage(json, species, format), cancellationToken) is { } set) found.Add(set);
+        }
+        return found;
+    }
+
     /// <summary>Species -> singles/doubles -> set; the chosen set as Showdown text, or null when the player backs out.</summary>
     public static async Task<string?> PickAsync(Grid host)
     {
@@ -70,6 +109,30 @@ public static class SmogonSetService
             new PadOption("Both", IconPath: "script"));
         if (kind is null) return null;
         bool? doubles = kind == "Singles" ? false : kind == "Doubles" ? true : null;
+        var source = await PadMenu.ShowAsync(host, "Smogon sets", "Which kind of set?",
+            new PadOption("Curated sets", IconPath: "script", Detail: "Smogon's recommended sets from the strategy dex."),
+            new PadOption("Most used", IconPath: "script", Detail: "Built from the latest usage statistics: top item, ability, spread and moves."));
+        if (source is null) return null;
+        if (source == "Most used")
+        {
+            var wait = LoadingOverlay.Show(host, "Fetching usage stats…", "Downloading the usage files (saved on the device).");
+            var usage = new List<SmogonSetInfo>();
+            try
+            {
+                if (doubles != true) usage.AddRange(await FindUsageAsync(species.Trim(), false));
+                if (doubles != false) usage.AddRange(await FindUsageAsync(species.Trim(), true));
+            }
+            finally { wait.Close(); }
+            if (usage.Count == 0)
+            {
+                await PadMenu.ShowAsync(host, "Smogon sets", $"No usage data for \"{species.Trim()}\" (or the internet is unreachable).", "OK");
+                return null;
+            }
+            string UsageLabel(SmogonSetInfo set) => $"{SmogonSets.FormatLabel(set.Format)} · most used";
+            var pick = await PadMenu.ShowAsync(host, $"{usage[0].Species} · most used", null,
+                usage.Select(set => new PadOption(UsageLabel(set), IconPath: "script")).ToArray());
+            return pick is null ? null : usage.First(set => UsageLabel(set) == pick).Showdown;
+        }
 
         var overlay = LoadingOverlay.Show(host, "Fetching Smogon sets…", "Downloading the set list (saved on the device after the first time).");
         (IReadOnlyList<SmogonSetInfo> Sets, string? Error) result;

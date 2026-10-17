@@ -186,6 +186,26 @@ public sealed class RogueSessionTests
     }
 
     [Fact]
+    public void Smogon_usage_stats_become_a_most_used_set()
+    {
+        const string json = """
+            {"battles":1,"pokemon":{"Great Tusk":{"abilities":{"Protosynthesis":1},
+            "items":{"Rocky Helmet":0.26,"Heavy-Duty Boots":0.25},
+            "teraTypes":{"Steel":0.29,"Fighting":0.11},
+            "spreads":{"Jolly:0/252/4/0/0/252":0.2,"Adamant:0/252/0/0/4/252":0.1},
+            "moves":{"Rapid Spin":0.91,"Headlong Rush":0.88,"Ice Spinner":0.77,"Stealth Rock":0.43,"Knock Off":0.2}}}}
+            """;
+        var set = SmogonSets.FromUsage(json, "great tusk", "gen9ou");
+        Assert.NotNull(set);
+        Assert.Contains("Great Tusk @ Rocky Helmet", set.Showdown);
+        Assert.Contains("EVs: 252 Atk / 4 Def / 252 Spe", set.Showdown);
+        Assert.Contains("Jolly Nature", set.Showdown);
+        Assert.Contains("- Stealth Rock", set.Showdown);
+        Assert.DoesNotContain("Knock Off", set.Showdown);
+        Assert.Null(SmogonSets.FromUsage(json, "Garchomp", "gen9ou"));
+    }
+
+    [Fact]
     public void Box_tools_sort_swap_delete_and_batch()
     {
         if (Sample() is not { } bytes) return;
